@@ -74,15 +74,18 @@ def generate_ar_edge_weight(edge_info, temperature=1.0, bias=0.0001):
     return adv_edge_weight, rec_edge_weight, reg
 
 
-def build_intent_vector(source, query, intent_dim, device, seed):
+def build_intent_vector(source, query, intent_dim, device, seed,
+                        encoder_name='paraphrase-multilingual-MiniLM-L12-v2'):
     """构建意图向量。encoder 不可用时回退为固定随机向量。"""
     if source == 'encoder':
         try:
             from adversarial_intent_encoder import SimpleIntentEncoder
-            enc = SimpleIntentEncoder(intent_dim=intent_dim)
+            enc = SimpleIntentEncoder(intent_dim=intent_dim,
+                                      encoder_name=encoder_name)
             with torch.no_grad():
                 iv, _ = enc(query, top_k_patterns=5)
             iv = iv.squeeze(0).float().to(device)
+            print(f"[intent] source=encoder ({encoder_name}), dim={intent_dim}")
             return F.normalize(iv, dim=-1)
         except Exception as e:
             print(f"[intent] 编码器不可用 ({e}); 回退为随机意图向量")
