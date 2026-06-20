@@ -1,0 +1,6 @@
+########################################
+{'dataset': 'chameleon', 'gpu_id': 0, 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 1, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5}
+########################################
+{'dataset': 'chameleon', 'gpu_id': 0, 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 100, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5}
+epoch: 100
+micro_f1: 67.87¡À2.47, macro_f1: 67.98¡À2.49, acc: 67.87¡À2.47

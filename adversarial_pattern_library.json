@@ -1,0 +1,872 @@
+{
+  "metadata": {
+    "name": "Adversarial Behavior Pattern Library",
+    "version": "1.0.0",
+    "description": "社交网络对抗行为模式知识库，用于意图引导的对抗社区搜索",
+    "author": "基于Botometer、TwiBot-20、CIB研究等多源整合",
+    "created_date": "2024",
+    "total_patterns": 50,
+    "categories": 8
+  },
+
+  "categories": {
+    "account_anomaly": {
+      "id": "CAT01",
+      "name": "账号特征异常",
+      "name_en": "Account Anomalies",
+      "description": "账号创建、资料、身份等方面的异常特征"
+    },
+    "temporal_anomaly": {
+      "id": "CAT02",
+      "name": "时间行为异常",
+      "name_en": "Temporal Anomalies",
+      "description": "发帖时间、活跃规律等时间维度的异常"
+    },
+    "content_anomaly": {
+      "id": "CAT03",
+      "name": "内容特征异常",
+      "name_en": "Content Anomalies",
+      "description": "发布内容、话题、语言等方面的异常"
+    },
+    "network_structure": {
+      "id": "CAT04",
+      "name": "网络结构异常",
+      "name_en": "Network Structure Anomalies",
+      "description": "社交网络拓扑结构方面的异常"
+    },
+    "interaction_anomaly": {
+      "id": "CAT05",
+      "name": "交互行为异常",
+      "name_en": "Interaction Anomalies",
+      "description": "转发、点赞、评论等交互行为的异常"
+    },
+    "coordination": {
+      "id": "CAT06",
+      "name": "协调行为",
+      "name_en": "Coordinated Behaviors",
+      "description": "多账号协同配合的行为模式"
+    },
+    "evasion": {
+      "id": "CAT07",
+      "name": "规避检测",
+      "name_en": "Detection Evasion",
+      "description": "故意规避检测系统的行为模式"
+    },
+    "adversarial_community": {
+      "id": "CAT08",
+      "name": "对抗社区特征",
+      "name_en": "Adversarial Community Features",
+      "description": "对抗性群体的整体特征（本研究核心）"
+    }
+  },
+
+  "patterns": [
+    {
+      "id": "P001",
+      "category": "account_anomaly",
+      "name": "账号批量创建",
+      "name_en": "Bulk Account Creation",
+      "description": "多个账号在短时间内集中创建，创建时间高度聚集",
+      "description_en": "Multiple accounts created within a short time window",
+      "source": "TwiBot-20/IRA",
+      "severity": "high",
+      "detection_signals": [
+        "创建时间间隔小于24小时",
+        "注册IP地址相近或相同",
+        "初始行为模式高度相似"
+      ],
+      "keywords": ["批量注册", "集中创建", "新账号", "注册时间"]
+    },
+    {
+      "id": "P002",
+      "category": "account_anomaly",
+      "name": "虚假身份信息",
+      "name_en": "Fake Identity",
+      "description": "使用虚构的个人信息，包括假名、假照片、假地理位置",
+      "description_en": "Using fabricated personal information including fake names and photos",
+      "source": "CIB/IRA",
+      "severity": "high",
+      "detection_signals": [
+        "头像为AI生成或盗用",
+        "个人简介与行为不符",
+        "地理位置与语言使用不匹配"
+      ],
+      "keywords": ["虚假身份", "假身份", "冒充", "伪装"]
+    },
+    {
+      "id": "P003",
+      "category": "account_anomaly",
+      "name": "资料不完整",
+      "name_en": "Incomplete Profile",
+      "description": "账号资料信息不完整，使用默认头像或缺少个人简介",
+      "description_en": "Incomplete profile with default avatar or missing bio",
+      "source": "Botometer",
+      "severity": "medium",
+      "detection_signals": [
+        "使用默认头像",
+        "个人简介为空或极短",
+        "无地理位置信息"
+      ],
+      "keywords": ["默认头像", "无简介", "资料空白"]
+    },
+    {
+      "id": "P004",
+      "category": "account_anomaly",
+      "name": "用户名异常",
+      "name_en": "Abnormal Username",
+      "description": "用户名包含大量随机数字或无意义字符组合",
+      "description_en": "Username contains random numbers or meaningless character combinations",
+      "source": "Botometer",
+      "severity": "medium",
+      "detection_signals": [
+        "用户名熵值异常高",
+        "包含超过4位连续数字",
+        "无法读出的字符组合"
+      ],
+      "keywords": ["随机用户名", "数字账号", "乱码名称"]
+    },
+    {
+      "id": "P005",
+      "category": "account_anomaly",
+      "name": "账号年龄与活跃度不匹配",
+      "name_en": "Age-Activity Mismatch",
+      "description": "新账号表现出与其年龄不符的高活跃度或影响力",
+      "description_en": "New accounts showing activity levels inconsistent with their age",
+      "source": "Botometer",
+      "severity": "high",
+      "detection_signals": [
+        "新账号短期内获得大量关注",
+        "账号创建后立即高频发帖",
+        "影响力指标异常增长"
+      ],
+      "keywords": ["新账号高活跃", "快速增粉", "异常影响力"]
+    },
+    {
+      "id": "P006",
+      "category": "temporal_anomaly",
+      "name": "发帖时间高度规律",
+      "name_en": "Highly Regular Posting Time",
+      "description": "发帖时间呈现机械式规律，如固定间隔发帖",
+      "description_en": "Posting times show mechanical regularity with fixed intervals",
+      "source": "Botometer",
+      "severity": "high",
+      "detection_signals": [
+        "发帖时间间隔标准差极小",
+        "固定分钟数发帖",
+        "无随机性波动"
+      ],
+      "keywords": ["定时发帖", "固定间隔", "机械规律", "自动发布"]
+    },
+    {
+      "id": "P007",
+      "category": "temporal_anomaly",
+      "name": "异常活跃时段",
+      "name_en": "Abnormal Active Hours",
+      "description": "在非正常时间段（如凌晨2-5点）持续保持高活跃度",
+      "description_en": "Continuously active during abnormal hours like 2-5 AM",
+      "source": "Botometer",
+      "severity": "medium",
+      "detection_signals": [
+        "凌晨时段活跃度不降",
+        "无明显休息时间",
+        "活跃时段与声称地理位置不符"
+      ],
+      "keywords": ["深夜活跃", "凌晨发帖", "无休息", "时区异常"]
+    },
+    {
+      "id": "P008",
+      "category": "temporal_anomaly",
+      "name": "多账号时间同步",
+      "name_en": "Multi-Account Time Synchronization",
+      "description": "多个账号在相同时间窗口内同时活跃或执行相同操作",
+      "description_en": "Multiple accounts active or performing same actions in the same time window",
+      "source": "CIB/ACCD",
+      "severity": "high",
+      "detection_signals": [
+        "活跃时间重叠度大于80%",
+        "操作时间差小于60秒",
+        "上下线时间一致"
+      ],
+      "keywords": ["同时活跃", "时间同步", "协同在线"]
+    },
+    {
+      "id": "P009",
+      "category": "temporal_anomaly",
+      "name": "爆发式活动",
+      "name_en": "Burst Activity",
+      "description": "平时沉默或低活跃，在特定事件时突然集中爆发活动",
+      "description_en": "Usually dormant but suddenly bursting with activity during specific events",
+      "source": "IRA",
+      "severity": "high",
+      "detection_signals": [
+        "活跃度突然增加10倍以上",
+        "爆发时间与热点事件对齐",
+        "爆发后迅速恢复沉默"
+      ],
+      "keywords": ["突然活跃", "集中爆发", "热点跟进", "休眠唤醒"]
+    },
+    {
+      "id": "P010",
+      "category": "temporal_anomaly",
+      "name": "快速响应",
+      "name_en": "Rapid Response",
+      "description": "对特定内容的响应速度异常快，超出正常人类反应时间",
+      "description_en": "Abnormally fast response to specific content beyond normal human reaction time",
+      "source": "Botometer",
+      "severity": "medium",
+      "detection_signals": [
+        "响应时间小于5秒",
+        "转发速度超出阅读时间",
+        "批量内容秒级响应"
+      ],
+      "keywords": ["秒回", "快速转发", "即时响应"]
+    },
+    {
+      "id": "P011",
+      "category": "content_anomaly",
+      "name": "内容高度模板化",
+      "name_en": "Highly Templated Content",
+      "description": "发布内容呈现明显的模板特征，仅有微小变化",
+      "description_en": "Published content shows obvious template features with only minor variations",
+      "source": "CIB",
+      "severity": "high",
+      "detection_signals": [
+        "多条内容相似度大于90%",
+        "固定句式+变量替换",
+        "结构完全一致仅词汇不同"
+      ],
+      "keywords": ["模板内容", "复制粘贴", "相似文本", "批量生成"]
+    },
+    {
+      "id": "P012",
+      "category": "content_anomaly",
+      "name": "主题高度集中",
+      "name_en": "Highly Concentrated Topics",
+      "description": "只关注极少数特定话题，缺乏正常用户的兴趣多样性",
+      "description_en": "Only focusing on very few specific topics, lacking normal user interest diversity",
+      "source": "TwiBot",
+      "severity": "medium",
+      "detection_signals": [
+        "话题集中度大于80%",
+        "主题熵值异常低",
+        "无日常生活相关内容"
+      ],
+      "keywords": ["单一话题", "主题集中", "缺乏多样性"]
+    },
+    {
+      "id": "P013",
+      "category": "content_anomaly",
+      "name": "情感极化表达",
+      "name_en": "Polarized Emotional Expression",
+      "description": "内容情感表达极端，要么极度正面要么极度负面",
+      "description_en": "Extremely positive or negative emotional expression in content",
+      "source": "IRA",
+      "severity": "medium",
+      "detection_signals": [
+        "情感分数处于极值区间",
+        "缺乏中立客观表达",
+        "大量使用情感强烈词汇"
+      ],
+      "keywords": ["情感极端", "极度正面", "极度负面", "煽动性"]
+    },
+    {
+      "id": "P014",
+      "category": "content_anomaly",
+      "name": "使用隐语暗号",
+      "name_en": "Using Code Words",
+      "description": "使用特定的隐语、暗号或符号进行隐蔽沟通",
+      "description_en": "Using specific code words, signals or symbols for covert communication",
+      "source": "Expert Knowledge",
+      "severity": "high",
+      "detection_signals": [
+        "出现非常规词汇组合",
+        "特定符号使用模式",
+        "上下文语义不通但特定群体能理解"
+      ],
+      "keywords": ["隐语", "暗号", "暗语", "黑话", "特殊符号"]
+    },
+    {
+      "id": "P015",
+      "category": "content_anomaly",
+      "name": "转发比例异常高",
+      "name_en": "Abnormally High Retweet Ratio",
+      "description": "转发内容占比远高于原创，几乎没有个人原创观点",
+      "description_en": "Retweet content ratio far exceeds original content with almost no personal views",
+      "source": "Botometer",
+      "severity": "medium",
+      "detection_signals": [
+        "转发占比大于90%",
+        "原创内容极少或为零",
+        "仅转发特定来源内容"
+      ],
+      "keywords": ["高转发", "无原创", "只转不发"]
+    },
+    {
+      "id": "P016",
+      "category": "content_anomaly",
+      "name": "内容与身份不符",
+      "name_en": "Content-Identity Mismatch",
+      "description": "发布内容与账号声称的身份、地理位置、职业等不符",
+      "description_en": "Published content inconsistent with claimed identity, location, or profession",
+      "source": "IRA",
+      "severity": "high",
+      "detection_signals": [
+        "声称本地人但内容显示外地视角",
+        "专业领域内容出现常识错误",
+        "语言习惯与声称背景不符"
+      ],
+      "keywords": ["身份矛盾", "人设崩塌", "不符身份"]
+    },
+    {
+      "id": "P017",
+      "category": "content_anomaly",
+      "name": "跨语言异常",
+      "name_en": "Cross-Language Anomaly",
+      "description": "同一账号使用多种语言，或语言使用与地理位置不符",
+      "description_en": "Same account using multiple languages or language inconsistent with location",
+      "source": "CIB",
+      "severity": "medium",
+      "detection_signals": [
+        "频繁切换语言",
+        "机器翻译痕迹明显",
+        "语言与IP地址不匹配"
+      ],
+      "keywords": ["多语言", "翻译痕迹", "语言切换"]
+    },
+    {
+      "id": "P018",
+      "category": "network_structure",
+      "name": "内部连接刻意稀疏",
+      "name_en": "Deliberately Sparse Internal Connections",
+      "description": "群体成员之间刻意减少直接关注或互动关系",
+      "description_en": "Group members deliberately reduce direct following or interaction relationships",
+      "source": "本研究核心",
+      "severity": "high",
+      "detection_signals": [
+        "内部连接密度显著低于随机图",
+        "成员间直接边数异常少",
+        "内聚系数远低于正常社区"
+      ],
+      "keywords": ["稀疏连接", "弱连接", "不互关", "刻意分散"]
+    },
+    {
+      "id": "P019",
+      "category": "network_structure",
+      "name": "共享异常邻居",
+      "name_en": "Sharing Abnormal Neighbors",
+      "description": "无直接连接但共享大量共同关注或共同粉丝",
+      "description_en": "No direct connection but sharing many common followings or followers",
+      "source": "本研究核心",
+      "severity": "high",
+      "detection_signals": [
+        "二跳邻居重叠度高",
+        "共同关注列表相似度大于50%",
+        "无直接边但Jaccard系数高"
+      ],
+      "keywords": ["共同关注", "共同好友", "间接关联", "二跳邻居"]
+    },
+    {
+      "id": "P020",
+      "category": "network_structure",
+      "name": "互关小团体",
+      "name_en": "Mutual-Follow Cliques",
+      "description": "形成紧密互相关注的小团体，团体内密度极高",
+      "description_en": "Forming tight mutual-follow cliques with extremely high internal density",
+      "source": "TwiBot/CIB",
+      "severity": "high",
+      "detection_signals": [
+        "局部聚类系数接近1",
+        "团体规模固定（如10-20人）",
+        "团体内部完全互关"
+      ],
+      "keywords": ["互关圈", "小团体", "抱团", "互粉群"]
+    },
+    {
+      "id": "P021",
+      "category": "network_structure",
+      "name": "粉丝关注比异常",
+      "name_en": "Abnormal Follower-Following Ratio",
+      "description": "关注数远多于粉丝数，或粉丝数异常增长",
+      "description_en": "Following count far exceeds follower count, or abnormal follower growth",
+      "source": "Botometer",
+      "severity": "medium",
+      "detection_signals": [
+        "关注/粉丝比大于10",
+        "大量单向关注无回关",
+        "粉丝数突然暴涨"
+      ],
+      "keywords": ["关注比异常", "单向关注", "买粉", "刷粉"]
+    },
+    {
+      "id": "P022",
+      "category": "network_structure",
+      "name": "通过中间节点通信",
+      "name_en": "Communication Through Intermediaries",
+      "description": "不直接连接但通过特定中间节点传递信息",
+      "description_en": "Not directly connected but passing information through specific intermediary nodes",
+      "source": "本研究核心",
+      "severity": "high",
+      "detection_signals": [
+        "最短路径长度恰好为2",
+        "存在多个共同的中间节点",
+        "中间节点度数异常高"
+      ],
+      "keywords": ["中间人", "间接传播", "桥接节点", "传话"]
+    },
+    {
+      "id": "P023",
+      "category": "network_structure",
+      "name": "星型网络结构",
+      "name_en": "Star Network Structure",
+      "description": "多个账号围绕一个或少数核心账号形成星型结构",
+      "description_en": "Multiple accounts forming star structure around one or few core accounts",
+      "source": "TwiBot",
+      "severity": "medium",
+      "detection_signals": [
+        "存在明显的中心节点",
+        "边缘节点只与中心连接",
+        "度分布呈现幂律特征"
+      ],
+      "keywords": ["星型结构", "中心账号", "核心节点"]
+    },
+    {
+      "id": "P024",
+      "category": "network_structure",
+      "name": "跨群组渗透",
+      "name_en": "Cross-Group Infiltration",
+      "description": "成员分散加入多个不同群组，但彼此间保持隐蔽联系",
+      "description_en": "Members dispersed across multiple groups but maintaining covert connections",
+      "source": "Expert Knowledge",
+      "severity": "high",
+      "detection_signals": [
+        "同一批账号出现在多个群组",
+        "群组间无明显关联但成员重叠",
+        "在不同群组发布相似内容"
+      ],
+      "keywords": ["渗透", "分散潜伏", "跨群活动"]
+    },
+    {
+      "id": "P025",
+      "category": "interaction_anomaly",
+      "name": "协同转发",
+      "name_en": "Coordinated Retweeting",
+      "description": "多个账号在短时间内集中转发相同或高度相似的内容",
+      "description_en": "Multiple accounts retweeting same or highly similar content in short time",
+      "source": "CIB/ACCD",
+      "severity": "high",
+      "detection_signals": [
+        "转发时间间隔小于5分钟",
+        "转发内容完全相同",
+        "转发顺序呈现规律"
+      ],
+      "keywords": ["集中转发", "批量转发", "协同扩散"]
+    },
+    {
+      "id": "P026",
+      "category": "interaction_anomaly",
+      "name": "协同点赞",
+      "name_en": "Coordinated Liking",
+      "description": "多个账号对特定内容进行集中点赞以提升其可见度",
+      "description_en": "Multiple accounts liking specific content to boost its visibility",
+      "source": "CIB",
+      "severity": "medium",
+      "detection_signals": [
+        "点赞时间高度集中",
+        "点赞来源账号特征相似",
+        "点赞数与自然传播不符"
+      ],
+      "keywords": ["刷赞", "批量点赞", "水军点赞"]
+    },
+    {
+      "id": "P027",
+      "category": "interaction_anomaly",
+      "name": "评论话术接力",
+      "name_en": "Comment Script Relay",
+      "description": "评论区出现固定模式的话术，像接力一样配合",
+      "description_en": "Fixed pattern scripts appearing in comments like a relay",
+      "source": "Expert Knowledge",
+      "severity": "high",
+      "detection_signals": [
+        "评论内容相似度高",
+        "评论时间呈序列规律",
+        "评论逻辑像在对话配合"
+      ],
+      "keywords": ["话术", "评论配合", "水军评论", "引导舆论"]
+    },
+    {
+      "id": "P028",
+      "category": "interaction_anomaly",
+      "name": "互动与连接不符",
+      "name_en": "Interaction-Connection Mismatch",
+      "description": "语义互动频繁但拓扑连接稀少（说得多连得少）",
+      "description_en": "Frequent semantic interactions but sparse topological connections",
+      "source": "本研究核心",
+      "severity": "high",
+      "detection_signals": [
+        "互动频率/连接强度比值高",
+        "@提及多但不互关",
+        "内容相似但无社交关系"
+      ],
+      "keywords": ["说多连少", "隐蔽互动", "语义关联强拓扑弱"]
+    },
+    {
+      "id": "P029",
+      "category": "interaction_anomaly",
+      "name": "单向互动模式",
+      "name_en": "Unidirectional Interaction Pattern",
+      "description": "只对特定目标进行单向互动，不与其他用户交流",
+      "description_en": "Only interacting with specific targets unidirectionally",
+      "source": "Botometer",
+      "severity": "medium",
+      "detection_signals": [
+        "互动对象高度集中",
+        "只转发/评论特定账号",
+        "无回复其他用户"
+      ],
+      "keywords": ["单向互动", "定向攻击", "集中骚扰"]
+    },
+    {
+      "id": "P030",
+      "category": "interaction_anomaly",
+      "name": "异常@提及",
+      "name_en": "Abnormal Mentions",
+      "description": "在内容中大量@提及其他用户，尤其是高影响力用户",
+      "description_en": "Massively mentioning other users especially high-influence ones in content",
+      "source": "Botometer",
+      "severity": "medium",
+      "detection_signals": [
+        "单条内容@超过5人",
+        "批量@不相关的名人",
+        "@的人从不回复"
+      ],
+      "keywords": ["批量@", "骚扰式提及", "蹭流量"]
+    },
+    {
+      "id": "P031",
+      "category": "coordination",
+      "name": "分布式攻击",
+      "name_en": "Distributed Attack",
+      "description": "多个账号从不同角度对同一目标发起攻击",
+      "description_en": "Multiple accounts attacking the same target from different angles",
+      "source": "CIB",
+      "severity": "high",
+      "detection_signals": [
+        "多账号同时攻击同一目标",
+        "攻击角度不同但目标一致",
+        "攻击时间有配合"
+      ],
+      "keywords": ["围攻", "分布式攻击", "多点打击"]
+    },
+    {
+      "id": "P032",
+      "category": "coordination",
+      "name": "正反双簧",
+      "name_en": "Good Cop Bad Cop",
+      "description": "不同账号分别扮演正反两方，制造虚假讨论氛围",
+      "description_en": "Different accounts playing opposite sides to create fake discussion atmosphere",
+      "source": "IRA",
+      "severity": "high",
+      "detection_signals": [
+        "两方账号特征相似",
+        "争论过于戏剧化",
+        "争论吸引大量围观但无实质内容"
+      ],
+      "keywords": ["双簧", "自导自演", "假对立", "引战"]
+    },
+    {
+      "id": "P033",
+      "category": "coordination",
+      "name": "信息级联放大",
+      "name_en": "Information Cascade Amplification",
+      "description": "通过多层级转发形成信息级联，人为放大传播效果",
+      "description_en": "Forming information cascade through multi-level retweeting to amplify spread",
+      "source": "CIB",
+      "severity": "high",
+      "detection_signals": [
+        "转发链路呈树状扩散",
+        "每一级都有多个节点参与",
+        "传播速度异常快"
+      ],
+      "keywords": ["级联传播", "病毒式扩散", "人为放大"]
+    },
+    {
+      "id": "P034",
+      "category": "coordination",
+      "name": "话题劫持",
+      "name_en": "Topic Hijacking",
+      "description": "利用热门话题标签传播无关或恶意内容",
+      "description_en": "Using trending hashtags to spread irrelevant or malicious content",
+      "source": "Expert Knowledge",
+      "severity": "medium",
+      "detection_signals": [
+        "内容与话题标签不相关",
+        "在多个热门标签下发布相同内容",
+        "蹭热点时间点精准"
+      ],
+      "keywords": ["蹭热点", "话题劫持", "标签滥用"]
+    },
+    {
+      "id": "P035",
+      "category": "coordination",
+      "name": "跨平台协同",
+      "name_en": "Cross-Platform Coordination",
+      "description": "在多个社交平台同步发布相同内容或执行相同行动",
+      "description_en": "Synchronously publishing same content or executing same actions across platforms",
+      "source": "Expert Knowledge",
+      "severity": "high",
+      "detection_signals": [
+        "多平台内容完全一致",
+        "发布时间高度同步",
+        "不同平台账号特征相似"
+      ],
+      "keywords": ["跨平台", "多平台同步", "全网发布"]
+    },
+    {
+      "id": "P036",
+      "category": "evasion",
+      "name": "养号行为",
+      "name_en": "Account Nurturing",
+      "description": "定期发布正常内容维持账号活跃度和可信度",
+      "description_en": "Regularly posting normal content to maintain account activity and credibility",
+      "source": "Expert Knowledge",
+      "severity": "medium",
+      "detection_signals": [
+        "日常内容与攻击内容风格差异大",
+        "有规律地发布无害内容",
+        "攻击期与养号期交替"
+      ],
+      "keywords": ["养号", "维护账号", "建立信任"]
+    },
+    {
+      "id": "P037",
+      "category": "evasion",
+      "name": "刻意分散隐藏",
+      "name_en": "Deliberate Dispersion",
+      "description": "故意不互相关注，分散在不同群组，避免被关联",
+      "description_en": "Deliberately not following each other, dispersed in different groups to avoid association",
+      "source": "本研究核心",
+      "severity": "high",
+      "detection_signals": [
+        "行为相似但网络距离远",
+        "无共同社交圈但内容相关",
+        "刻意避免任何直接连接"
+      ],
+      "keywords": ["分散", "隐藏关联", "避免检测"]
+    },
+    {
+      "id": "P038",
+      "category": "evasion",
+      "name": "模仿正常用户",
+      "name_en": "Mimicking Normal Users",
+      "description": "模仿正常用户的行为模式，包括发帖频率、内容多样性等",
+      "description_en": "Mimicking normal user behavior patterns including posting frequency and content diversity",
+      "source": "Expert Knowledge",
+      "severity": "medium",
+      "detection_signals": [
+        "行为指标接近正常分布",
+        "有意制造随机性",
+        "定期发布生活类内容"
+      ],
+      "keywords": ["伪装正常", "模仿用户", "反检测"]
+    },
+    {
+      "id": "P039",
+      "category": "evasion",
+      "name": "使用代理IP",
+      "name_en": "Using Proxy IPs",
+      "description": "使用代理IP或VPN隐藏真实地理位置",
+      "description_en": "Using proxy IPs or VPNs to hide real geographic location",
+      "source": "Expert Knowledge",
+      "severity": "medium",
+      "detection_signals": [
+        "IP地址频繁变化",
+        "IP与声称位置不符",
+        "使用已知代理IP段"
+      ],
+      "keywords": ["代理IP", "VPN", "隐藏位置"]
+    },
+    {
+      "id": "P040",
+      "category": "evasion",
+      "name": "内容变体生成",
+      "name_en": "Content Variant Generation",
+      "description": "对相同核心信息进行改写生成多个变体，规避内容检测",
+      "description_en": "Rewriting same core information to generate variants to evade content detection",
+      "source": "Expert Knowledge",
+      "severity": "medium",
+      "detection_signals": [
+        "语义相同但表达不同",
+        "使用同义词替换",
+        "句式结构调整"
+      ],
+      "keywords": ["内容改写", "变体生成", "规避查重"]
+    },
+    {
+      "id": "P041",
+      "category": "evasion",
+      "name": "低频慢速操作",
+      "name_en": "Low-Frequency Slow Operations",
+      "description": "降低操作频率，避免触发基于频率的检测机制",
+      "description_en": "Reducing operation frequency to avoid triggering frequency-based detection",
+      "source": "Expert Knowledge",
+      "severity": "medium",
+      "detection_signals": [
+        "操作频率刚好低于阈值",
+        "动作间隔人为延长",
+        "长期低频但持续活动"
+      ],
+      "keywords": ["低频操作", "慢速行动", "规避阈值"]
+    },
+    {
+      "id": "P042",
+      "category": "adversarial_community",
+      "name": "拓扑弱内聚",
+      "name_en": "Topologically Weak Cohesion",
+      "description": "社区内部的网络连接密度显著低于正常社区",
+      "description_en": "Internal network connection density significantly lower than normal communities",
+      "source": "本研究核心",
+      "severity": "high",
+      "detection_signals": [
+        "内聚系数低于0.1",
+        "平均度数远低于全局平均",
+        "内部边数少于节点数"
+      ],
+      "keywords": ["弱内聚", "松散结构", "低密度社区"]
+    },
+    {
+      "id": "P043",
+      "category": "adversarial_community",
+      "name": "语义高度一致",
+      "name_en": "Semantically Highly Consistent",
+      "description": "尽管拓扑稀疏，但成员发布内容在语义上高度一致",
+      "description_en": "Despite sparse topology, members' content is semantically highly consistent",
+      "source": "本研究核心",
+      "severity": "high",
+      "detection_signals": [
+        "内容语义相似度大于0.7",
+        "使用相同的关键词集合",
+        "观点立场高度一致"
+      ],
+      "keywords": ["语义一致", "观点统一", "内容相关"]
+    },
+    {
+      "id": "P044",
+      "category": "adversarial_community",
+      "name": "结构隐匿",
+      "name_en": "Structurally Hidden",
+      "description": "社区成员被其他正常大型社区所掩盖，难以识别",
+      "description_en": "Community members hidden by other normal large communities, difficult to identify",
+      "source": "本研究核心",
+      "severity": "high",
+      "detection_signals": [
+        "成员分散在多个正常社区中",
+        "与正常用户混杂",
+        "常规社区检测算法无法发现"
+      ],
+      "keywords": ["隐匿", "掩盖", "混入正常用户"]
+    },
+    {
+      "id": "P045",
+      "category": "adversarial_community",
+      "name": "意图驱动行为",
+      "name_en": "Intent-Driven Behavior",
+      "description": "行为模式与特定对抗意图高度相关",
+      "description_en": "Behavior patterns highly correlated with specific adversarial intent",
+      "source": "本研究核心",
+      "severity": "high",
+      "detection_signals": [
+        "行为与查询意图匹配度高",
+        "活动时间与目标事件相关",
+        "内容针对特定对象或话题"
+      ],
+      "keywords": ["意图相关", "目标明确", "针对性行为"]
+    },
+    {
+      "id": "P046",
+      "category": "adversarial_community",
+      "name": "快速组建与解散",
+      "name_en": "Rapid Formation and Dissolution",
+      "description": "群体快速组建执行任务后迅速解散消失",
+      "description_en": "Groups quickly formed to execute tasks then rapidly dissolved",
+      "source": "Expert Knowledge",
+      "severity": "high",
+      "detection_signals": [
+        "群组存在时间短于一周",
+        "任务完成后成员消失",
+        "账号转为休眠或注销"
+      ],
+      "keywords": ["快闪", "临时组建", "迅速解散"]
+    },
+    {
+      "id": "P047",
+      "category": "adversarial_community",
+      "name": "层级化组织",
+      "name_en": "Hierarchical Organization",
+      "description": "存在明显的指挥层级，核心节点指挥边缘节点",
+      "description_en": "Clear command hierarchy with core nodes directing peripheral nodes",
+      "source": "Expert Knowledge",
+      "severity": "high",
+      "detection_signals": [
+        "信息流向呈单向层级",
+        "核心节点先发布边缘节点后跟进",
+        "边缘节点不直接沟通"
+      ],
+      "keywords": ["层级组织", "指挥结构", "核心边缘"]
+    },
+    {
+      "id": "P048",
+      "category": "adversarial_community",
+      "name": "任务分工明确",
+      "name_en": "Clear Task Division",
+      "description": "不同成员承担不同角色和任务，分工协作",
+      "description_en": "Different members taking different roles and tasks with division of labor",
+      "source": "Expert Knowledge",
+      "severity": "medium",
+      "detection_signals": [
+        "不同账号行为模式不同但互补",
+        "有的负责生产内容有的负责传播",
+        "角色固定不轻易变化"
+      ],
+      "keywords": ["分工", "角色分配", "任务划分"]
+    },
+    {
+      "id": "P049",
+      "category": "adversarial_community",
+      "name": "冗余备份机制",
+      "name_en": "Redundancy Backup Mechanism",
+      "description": "存在备用账号，主账号被封后备用账号接替",
+      "description_en": "Backup accounts exist to take over when main accounts are suspended",
+      "source": "Expert Knowledge",
+      "severity": "medium",
+      "detection_signals": [
+        "新账号行为与被封账号相似",
+        "存在多个高度相似的账号",
+        "一个被封立刻有新的出现"
+      ],
+      "keywords": ["备用账号", "小号", "替补账号"]
+    },
+    {
+      "id": "P050",
+      "category": "adversarial_community",
+      "name": "外部连接作为掩护",
+      "name_en": "External Connections as Cover",
+      "description": "与大量正常用户建立连接作为掩护，稀释可疑特征",
+      "description_en": "Establishing connections with many normal users as cover to dilute suspicious features",
+      "source": "本研究核心",
+      "severity": "medium",
+      "detection_signals": [
+        "与正常用户有大量单向关注",
+        "外部连接远多于内部连接",
+        "社交圈看起来很正常"
+      ],
+      "keywords": ["外部掩护", "正常伪装", "稀释特征"]
+    }
+  ],
+
+  "pattern_embeddings_info": {
+    "description": "模式嵌入向量需要使用文本编码器生成",
+    "recommended_encoder": "BAAI/bge-large-zh-v1.5",
+    "embedding_dimension": 1024,
+    "usage": "使用description字段或name+description拼接作为编码输入"
+  }
+}
