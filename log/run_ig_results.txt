@@ -12,3 +12,22 @@ epoch: 2
 micro_f1: 76.36±1.23, macro_f1: 73.59±1.88, acc: 76.36±1.23
 ########################################
 {'dataset': 'cora_lcc', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'encoder', 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001}
+epoch: 200
+micro_f1: 84.74±1.16, macro_f1: 83.22±1.16, acc: 84.74±1.16
+########################################
+{'dataset': 'IMDB', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'encoder', 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None}
+epoch: 50
+micro_f1: 53.50±0.78, macro_f1: 52.60±0.99, acc: 53.50±0.78
+########################################
+{'dataset': 'IMDB', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 5, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'encoder', 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None}
+########################################
+{'dataset': 'IMDB', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'encoder', 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None}
+epoch: 50
+micro_f1: 54.31±0.94, macro_f1: 53.57±1.23, acc: 54.31±0.94
+  CS@10: P=42.39 R=0.29 F1=0.58 Jaccard=0.29
+  CS@20: P=40.21 R=0.55 F1=1.09 Jaccard=0.55
+  CS@50: P=38.14 R=1.31 F1=2.53 Jaccard=1.28
+########################################
+{'dataset': 'IMDB', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'random', 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None}
+########################################
+{'dataset': 'IMDB', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'random', 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20}

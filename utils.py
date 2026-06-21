@@ -4,6 +4,8 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import torch
 import numpy as np
 import random
+import os.path as osp
+import scipy.sparse as sp
 
 from torch_geometric.datasets import (
     Planetoid, CitationFull, Amazon, Coauthor,
@@ -107,3 +109,89 @@ def get_dataset(path, name):
         "public",
         T.NormalizeFeatures()
     )
+
+
+# =============================================================================
+# Community-Search Heterogeneous Graph Datasets (ACM / DBLP / IMDB)
+# =============================================================================
+
+CS_DATASETS = {
+    'ACM': {
+        'dir': 'acm',
+        'feat': 'p_feat.npz',
+        'meta_paths': ['pap.npz', 'psp.npz'],
+        # PSP is extremely dense (~4.3M nnz); default to the sparse PAP only.
+        'default': ['pap.npz'],
+    },
+    'DBLP': {
+        'dir': 'dblp',
+        'feat': 'a_feat.npz',
+        'meta_paths': ['apa.npz', 'apcpa.npz', 'aptpa.npz'],
+        # APCPA/APTPA are extremely dense (5M/7M nnz); default to sparse APA only.
+        'default': ['apa.npz'],
+    },
+    'IMDB': {
+        'dir': 'self_imdb',
+        'feat': 'm_feat.npz',
+        'meta_paths': ['mam.npz', 'mdm.npz'],
+        # both are sparse enough to merge.
+        'default': ['mam.npz', 'mdm.npz'],
+    },
+}
+
+
+def _sparse_to_edge_index(adj_sp):
+    """Convert scipy sparse matrix to PyG edge_index [2, nnz]."""
+    coo = adj_sp.tocoo()
+    row = torch.from_numpy(coo.row.astype(np.int64))
+    col = torch.from_numpy(coo.col.astype(np.int64))
+    return torch.stack([row, col], dim=0)
+
+
+def get_cs_dataset(root, name, meta_path=None):
+    """
+    Load community-search heterogeneous graph dataset.
+
+    Args:
+        root: dataset root (e.g. './datasets/')
+        name: one of 'ACM', 'DBLP', 'IMDB'
+        meta_path: 'pap.npz' for a single meta-path, 'all' to merge everything,
+                   or None to use a curated default (avoids memory blow-up).
+    Returns:
+        list containing one PyG Data object
+    """
+    cfg = CS_DATASETS[name]
+    base = osp.join(root, cfg['dir'])
+
+    feat_sp = sp.load_npz(osp.join(base, cfg['feat']))
+    x = torch.from_numpy(feat_sp.toarray()).float()
+    # row-normalize features (matches T.NormalizeFeatures used for other datasets)
+    row_sum = x.sum(dim=1, keepdim=True).clamp(min=1.0)
+    x = x / row_sum
+
+    labels = np.load(osp.join(base, 'labels.npy'))
+    y = torch.from_numpy(labels.astype(np.int64))
+
+    if meta_path is not None and meta_path != 'all':
+        paths_to_merge = [meta_path]
+    elif meta_path == 'all':
+        paths_to_merge = cfg['meta_paths']
+    else:
+        paths_to_merge = cfg['default']
+
+    adj = None
+    for mp in paths_to_merge:
+        m = sp.load_npz(osp.join(base, mp))
+        m = (m > 0).astype(np.float64)
+        adj = m if adj is None else adj + m
+    adj = (adj > 0).astype(np.float64)
+
+    adj = adj + adj.T
+    adj = (adj > 0).astype(np.float64)
+    adj.setdiag(0)
+    adj.eliminate_zeros()
+
+    edge_index = _sparse_to_edge_index(adj)
+
+    data = Data(x=x, edge_index=edge_index, y=y)
+    return [data]

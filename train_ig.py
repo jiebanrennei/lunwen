@@ -16,7 +16,7 @@ import argparse
 import os.path as osp
 from time import perf_counter as t
 
-from utils import set_everything, get_dataset
+from utils import set_everything, get_dataset, get_cs_dataset, CS_DATASETS
 
 import torch
 import torch.nn.functional as F
@@ -26,7 +26,7 @@ from torch_geometric.utils import to_undirected
 
 from model import Encoder
 from ig_model import IntentGuidedAdversarialModel, IntentContrastiveModel
-from eval import label_classification
+from eval import label_classification, community_search, community_search_greedy
 
 torch.use_deterministic_algorithms(True)
 torch.backends.cudnn.deterministic = True
@@ -37,13 +37,8 @@ def generate_ar_edge_weight(edge_info, temperature=1.0, bias=0.0001):
     """
     生成对抗视图(减边)与重构视图(加边/恢复)的互补边权重。
 
-    与 EDA-GCL 的 generate_aug_edge_weight 同构,但语义不同:
-    - adv_edge_weight: 对抗视图,保留在对抗压力下"存活"的子集 (减边/稀疏化)
-    - rec_edge_weight: 重构视图,保留互补子集,即意图认为应恢复的连接 (加边)
-    二者经硬阈值后边集互斥,实现"互补双视图"。
-
-    注: 真正的"加全新边"需要候选边生成 (O(N^2)),此核心版先在现有边上
-    做意图引导的互补划分;新增边作为后续扩展。
+    对抗视图: 在现有边上做稀疏化(减边)。
+    重构视图: 现有边互补子集 + 候选新边(加边),两部分合并。
     """
     device = edge_info['upper_edge_logits'].device
     logits_shape = edge_info['upper_edge_logits'].size()
@@ -55,7 +50,7 @@ def generate_ar_edge_weight(edge_info, temperature=1.0, bias=0.0001):
         (gate_adv + edge_info['upper_edge_logits']) / temperature
     ).squeeze()
 
-    # ---- 重构视图权重 (下三角 logits) ----
+    # ---- 重构视图权重 (下三角 logits, 现有边部分) ----
     eps_rec = (bias - (1 - bias)) * torch.rand(logits_shape) + (1 - bias)
     gate_rec = (torch.log(eps_rec) - torch.log(1 - eps_rec)).to(device)
     rec_edge_weight = torch.sigmoid(
@@ -65,13 +60,27 @@ def generate_ar_edge_weight(edge_info, temperature=1.0, bias=0.0001):
     # ---- 对抗正则化: 鼓励/控制两视图差异 ----
     reg = F.l1_loss(adv_edge_weight, rec_edge_weight)
 
-    # ---- 互补硬阈值: 每条边只归属一个视图 ----
+    # ---- 互补硬阈值: 每条现有边只归属一个视图 ----
     noise = torch.randn_like(adv_edge_weight) * 1e-7
     mask = (adv_edge_weight + noise) > (rec_edge_weight + noise)
     adv_edge_weight = torch.where(mask, adv_edge_weight, torch.tensor(0.).to(device))
     rec_edge_weight = torch.where(~mask, rec_edge_weight, torch.tensor(0.).to(device))
 
-    return adv_edge_weight, rec_edge_weight, reg
+    # ---- 候选新边权重 (加边) ----
+    cand_logits = edge_info['cand_edge_logits']
+    if cand_logits.numel() > 0:
+        cand_shape = cand_logits.size()
+        eps_c = (bias - (1 - bias)) * torch.rand(cand_shape) + (1 - bias)
+        gate_c = (torch.log(eps_c) - torch.log(1 - eps_c)).to(device)
+        cand_edge_weight = torch.sigmoid(
+            (gate_c + cand_logits) / temperature
+        ).squeeze(-1)
+        if cand_edge_weight.dim() == 0:
+            cand_edge_weight = cand_edge_weight.unsqueeze(0)
+    else:
+        cand_edge_weight = torch.zeros(0, device=device)
+
+    return adv_edge_weight, rec_edge_weight, reg, cand_edge_weight
 
 
 def build_intent_vector(source, query, intent_dim, device, seed,
@@ -128,6 +137,12 @@ if __name__ == '__main__':
                         default='找出在社交网络上通过隐蔽连接协同的群体')
     parser.add_argument('--adv_temp', type=float, default=1.0)
     parser.add_argument('--bias', type=float, default=0.0001)
+    parser.add_argument('--meta_path', type=str, default=None,
+                        help='For ACM/DBLP/IMDB: single meta-path file (e.g. pap.npz). None=merge all.')
+    parser.add_argument('--num_cand_per_node', type=int, default=5,
+                        help='Candidate new edges per node for reconstruction view')
+    parser.add_argument('--cand_refresh_interval', type=int, default=20,
+                        help='Refresh candidate edges every N epochs (0=only once)')
     args = parser.parse_args()
 
     print("Using CPU")
@@ -145,7 +160,10 @@ if __name__ == '__main__':
     device = torch.device('cpu')
 
     # ========== 数据 ==========
-    dataset = get_dataset('./datasets/', args.dataset)
+    if args.dataset in CS_DATASETS:
+        dataset = get_cs_dataset('./datasets/', args.dataset, meta_path=args.meta_path)
+    else:
+        dataset = get_dataset('./datasets/', args.dataset)
     data = dataset[0]
     data.edge_index = to_undirected(data.edge_index)
     num_features = data.x.shape[1]
@@ -177,7 +195,8 @@ if __name__ == '__main__':
     )
 
     adv_model = IntentGuidedAdversarialModel(
-        encoder, args.num_hidden, args.intent_dim, args.num_edge_hidden
+        encoder, args.num_hidden, args.intent_dim, args.num_edge_hidden,
+        num_cand_per_node=args.num_cand_per_node
     ).to(device)
     optimizer_adv = torch.optim.Adam(
         adv_model.parameters(), lr=args.learning_rate_adv,
@@ -198,22 +217,37 @@ if __name__ == '__main__':
     start = t()
     prev = start
     for epoch in range(1, args.num_epochs + 1):
+        # 周期性刷新候选新边(用当前嵌入重选, 第 1 轮在 forward 内部自动生成)
+        if args.cand_refresh_interval > 0 and epoch > 1 and (epoch - 1) % args.cand_refresh_interval == 0:
+            with torch.no_grad():
+                adv_model.refresh_candidate_edges(data.x, data.edge_index, ones, intent_vector)
+
         # ----- Phase 1: 对抗生成器最大化损失 -----
         adv_model.train()
         adv_model.zero_grad()
         contrastive_model.eval()
 
         edge_info = adv_model(data.x, data.edge_index, ones, intent_vector)
-        adv_w, rec_w, reg = generate_ar_edge_weight(
+        adv_w, rec_w, reg, cand_w = generate_ar_edge_weight(
             edge_info, args.adv_temp, args.bias
         )
 
         z_adv = contrastive_model(
             data.x, data.edge_index, torch.cat([adv_w, adv_w], dim=0)
         )
-        z_rec = contrastive_model(
-            data.x, data.edge_index, torch.cat([rec_w, rec_w], dim=0)
-        )
+
+        # 重构视图: 现有边(互补子集) + 候选新边(真正加边)
+        cand_edges = edge_info['cand_edges']
+        if cand_w.numel() > 0:
+            cand_bi = torch.cat([cand_edges, cand_edges.flip(0)], dim=1)
+            cand_w_bi = torch.cat([cand_w, cand_w], dim=0)
+            rec_edge_index = torch.cat([data.edge_index, cand_bi], dim=1)
+            rec_edge_weight = torch.cat([torch.cat([rec_w, rec_w], dim=0), cand_w_bi], dim=0)
+        else:
+            rec_edge_index = data.edge_index
+            rec_edge_weight = torch.cat([rec_w, rec_w], dim=0)
+
+        z_rec = contrastive_model(data.x, rec_edge_index, rec_edge_weight)
 
         loss, _ = contrastive_model.total_loss(
             z_adv, z_rec, intent_vector, reg,
@@ -230,16 +264,25 @@ if __name__ == '__main__':
         adv_model.eval()
 
         edge_info = adv_model(data.x, data.edge_index, ones, intent_vector)
-        adv_w, rec_w, _ = generate_ar_edge_weight(
+        adv_w, rec_w, _, cand_w = generate_ar_edge_weight(
             edge_info, args.adv_temp, args.bias
         )
 
         z_adv = contrastive_model(
             data.x, data.edge_index, torch.cat([adv_w, adv_w], dim=0)
         )
-        z_rec = contrastive_model(
-            data.x, data.edge_index, torch.cat([rec_w, rec_w], dim=0)
-        )
+
+        cand_edges = edge_info['cand_edges']
+        if cand_w.numel() > 0:
+            cand_bi = torch.cat([cand_edges, cand_edges.flip(0)], dim=1)
+            cand_w_bi = torch.cat([cand_w, cand_w], dim=0)
+            rec_edge_index = torch.cat([data.edge_index, cand_bi], dim=1)
+            rec_edge_weight = torch.cat([torch.cat([rec_w, rec_w], dim=0), cand_w_bi], dim=0)
+        else:
+            rec_edge_index = data.edge_index
+            rec_edge_weight = torch.cat([rec_w, rec_w], dim=0)
+
+        z_rec = contrastive_model(data.x, rec_edge_index, rec_edge_weight)
 
         l_con = contrastive_model.contrastive_loss(z_adv, z_rec)
         l_int = contrastive_model.intent_consistency_loss(
@@ -270,7 +313,29 @@ if __name__ == '__main__':
         f"acc: {acc_mean:.2f}±{acc_std:.2f}"
     )
     print(formatted_result)
+
+    # ========== 评估 (社区搜索指标) ==========
+    cs_results = community_search(emb, data, topk=(10, 20, 50, 'oracle'))
+    cs_greedy = community_search_greedy(emb, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
+                                        num_queries=200, seed=args.seed)
+
     with open(log_file, 'a') as f:
         f.write('epoch: ' + str(epoch) + '\n')
         f.write(formatted_result + '\n')
+        for k, metrics in cs_results.items():
+            f.write(f"  CS@{k}: P={metrics['precision']:.2f} "
+                    f"R={metrics['recall']:.2f} "
+                    f"F1={metrics['f1']:.2f} "
+                    f"Jaccard={metrics['jaccard']:.2f}\n")
+        for w, metrics in cs_greedy.items():
+            line = (f"  CS-greedy@w={w}: P={metrics['precision']:.2f} "
+                    f"R={metrics['recall']:.2f} "
+                    f"F1={metrics['f1']:.2f} "
+                    f"Jaccard={metrics['jaccard']:.2f} "
+                    f"size={metrics['avg_size']:.1f}")
+            if metrics.get('density', 0) > 0:
+                line += (f" den={metrics['density']:.3f}"
+                         f" cond={metrics['conductance']:.3f}"
+                         f" diam={metrics['diameter']:.2f}")
+            f.write(line + '\n')
     print('-----------------')
