@@ -148,7 +148,45 @@ def _sparse_to_edge_index(adj_sp):
     return torch.stack([row, col], dim=0)
 
 
-def get_cs_dataset(root, name, meta_path=None):
+def _binarize_symmetric(adj_sp):
+    """二值化 + 对称化 + 去自环, 返回 scipy 稀疏矩阵。"""
+    a = (adj_sp > 0).astype(np.float64)
+    a = a + a.T
+    a = (a > 0).astype(np.float64)
+    a.setdiag(0)
+    a.eliminate_zeros()
+    return a
+
+
+def _sparsify_topk(adj_sp, k):
+    """对每个节点只保留 top-k 邻居 (按 meta-path 原始权重/度数)，结果对称化。
+
+    用于稠密 meta-path (如 ACM-PSP, DBLP-APCPA) 的内存控制。
+    """
+    csr = adj_sp.tocsr()
+    n = csr.shape[0]
+    rows, cols = [], []
+    for i in range(n):
+        start, end = csr.indptr[i], csr.indptr[i + 1]
+        if end - start <= k:
+            cols.append(csr.indices[start:end])
+        else:
+            vals = csr.data[start:end]
+            topk_idx = np.argpartition(vals, -k)[-k:]
+            cols.append(csr.indices[start:end][topk_idx])
+        rows.append(np.full(len(cols[-1]), i, dtype=np.int64))
+    rows = np.concatenate(rows)
+    cols = np.concatenate(cols)
+    sparse = sp.csr_matrix((np.ones(len(rows)), (rows, cols)), shape=(n, n))
+    sparse = sparse + sparse.T
+    sparse = (sparse > 0).astype(np.float64)
+    sparse.setdiag(0)
+    sparse.eliminate_zeros()
+    return sparse
+
+
+def get_cs_dataset(root, name, meta_path=None, multi_relation=False,
+                   cs_relations=None, sparsify_topk=None):
     """
     Load community-search heterogeneous graph dataset.
 
@@ -157,8 +195,14 @@ def get_cs_dataset(root, name, meta_path=None):
         name: one of 'ACM', 'DBLP', 'IMDB'
         meta_path: 'pap.npz' for a single meta-path, 'all' to merge everything,
                    or None to use a curated default (avoids memory blow-up).
+        multi_relation: True 时额外返回 per-relation edge_index_list。
+        cs_relations: 多关系模式下可选的 meta-path 名列表 (不含 .npz, 如 ['pap']);
+                      None 表示用全部 cfg['meta_paths']。
+        sparsify_topk: int or None. 非 None 时, 对平均度数超过此值的稠密 meta-path
+                       自动做 top-k 稀疏化 (每节点保留 k 个最强邻居)。
     Returns:
-        list containing one PyG Data object
+        list containing one PyG Data object. 多关系模式下 data 额外带有
+        edge_index_list / num_relations / relation_names 属性。
     """
     cfg = CS_DATASETS[name]
     base = osp.join(root, cfg['dir'])
@@ -184,14 +228,45 @@ def get_cs_dataset(root, name, meta_path=None):
         m = sp.load_npz(osp.join(base, mp))
         m = (m > 0).astype(np.float64)
         adj = m if adj is None else adj + m
-    adj = (adj > 0).astype(np.float64)
-
-    adj = adj + adj.T
-    adj = (adj > 0).astype(np.float64)
-    adj.setdiag(0)
-    adj.eliminate_zeros()
-
+    adj = _binarize_symmetric(adj)
     edge_index = _sparse_to_edge_index(adj)
 
     data = Data(x=x, edge_index=edge_index, y=y)
+
+    if multi_relation:
+        # 选择参与的 meta-path: cs_relations 优先, 否则全部
+        all_mp = cfg['meta_paths']
+        if cs_relations:
+            wanted = set(cs_relations)
+            rel_paths = [mp for mp in all_mp
+                         if mp.replace('.npz', '') in wanted]
+            if not rel_paths:
+                raise ValueError(
+                    f"cs_relations={cs_relations} 未匹配 {name} 的任何 meta-path "
+                    f"{[mp.replace('.npz','') for mp in all_mp]}")
+        else:
+            rel_paths = list(all_mp)
+
+        edge_index_list = []
+        relation_names = []
+        for mp in rel_paths:
+            m_raw = sp.load_npz(osp.join(base, mp))
+            n = m_raw.shape[0]
+            nnz = m_raw.nnz
+            avg_deg = nnz / max(n, 1)
+            if sparsify_topk is not None and avg_deg > sparsify_topk:
+                # 用原始 path-count 权重做 top-k, 再二值对称化
+                m = _sparsify_topk(m_raw, sparsify_topk)
+                print(f"  [sparsify] {mp}: {nnz} -> {m.nnz} edges "
+                      f"(avg_deg {avg_deg:.0f} -> {m.nnz/max(n,1):.0f}, "
+                      f"top-k={sparsify_topk})")
+            else:
+                m = _binarize_symmetric(m_raw)
+            edge_index_list.append(_sparse_to_edge_index(m))
+            relation_names.append(mp.replace('.npz', ''))
+
+        data.edge_index_list = edge_index_list
+        data.num_relations = len(edge_index_list)
+        data.relation_names = relation_names
+
     return [data]

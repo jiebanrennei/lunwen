@@ -31,3 +31,167 @@ micro_f1: 54.31¡À0.94, macro_f1: 53.57¡À1.23, acc: 54.31¡À0.94
 {'dataset': 'IMDB', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'random', 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None}
 ########################################
 {'dataset': 'IMDB', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'random', 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20}
+epoch: 50
+micro_f1: 54.69¡À1.18, macro_f1: 53.85¡À1.56, acc: 54.69¡À1.18
+  CS@10: P=44.10 R=0.30 F1=0.60 Jaccard=0.30
+  CS@20: P=42.50 R=0.58 F1=1.15 Jaccard=0.58
+  CS@50: P=40.95 R=1.41 F1=2.72 Jaccard=1.38
+  CS@oracle: P=36.90 R=36.90 F1=36.90 Jaccard=23.04
+  CS-greedy@w=0.0: P=34.32 R=56.78 F1=41.16 Jaccard=26.59 size=2353.0
+  CS-greedy@w=0.1: P=34.36 R=55.57 F1=40.77 Jaccard=26.28 size=2299.4
+  CS-greedy@w=0.2: P=34.40 R=54.15 F1=40.31 Jaccard=25.91 size=2237.8
+  CS-greedy@w=0.3: P=34.66 R=52.36 F1=39.54 Jaccard=25.34 size=2163.8
+  CS-greedy@w=0.5: P=34.75 R=48.03 F1=37.67 Jaccard=23.96 size=1978.4
+########################################
+{'dataset': 'cora_lcc', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 3, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'random', 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'gcn', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5}
+epoch: 3
+micro_f1: 83.66¡À0.74, macro_f1: 82.18¡À0.80, acc: 83.66¡À0.74
+  CS@10: P=78.86 R=2.16 F1=4.17 Jaccard=2.15
+  CS@20: P=75.86 R=4.12 F1=7.72 Jaccard=4.07
+  CS@50: P=70.42 R=9.52 F1=16.37 Jaccard=9.18
+  CS@oracle: P=45.59 R=45.59 F1=45.59 Jaccard=31.44
+  CS-greedy@w=0.0: P=29.56 R=69.34 F1=38.20 Jaccard=24.49 size=985.3
+  CS-greedy@w=0.1: P=32.75 R=65.13 F1=38.46 Jaccard=24.99 size=866.0
+  CS-greedy@w=0.2: P=35.59 R=60.79 F1=39.24 Jaccard=26.01 size=746.1
+  CS-greedy@w=0.3: P=40.97 R=55.31 F1=39.65 Jaccard=27.07 size=611.6
+  CS-greedy@w=0.5: P=56.38 R=36.62 F1=34.61 Jaccard=24.21 size=296.6
+########################################
+{'dataset': 'cora_lcc', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 256, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 3, 'tau': 0.4, 'num_epochs': 3, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 64, 'lambda_intent': 0.3, 'intent_source': 'random', 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5}
+epoch: 3
+micro_f1: 68.32¡À1.58, macro_f1: 65.17¡À1.69, acc: 68.32¡À1.58
+  CS@10: P=67.18 R=1.79 F1=3.47 Jaccard=1.78
+  CS@20: P=61.14 R=3.23 F1=6.07 Jaccard=3.17
+  CS@50: P=52.18 R=6.80 F1=11.76 Jaccard=6.40
+  CS@oracle: P=29.96 R=29.96 F1=29.96 Jaccard=18.25
+  CS-greedy@w=0.0: P=21.07 R=63.11 F1=29.49 Jaccard=17.61 size=1298.0
+  CS-greedy@w=0.1: P=21.79 R=59.27 F1=28.80 Jaccard=17.21 size=1189.1
+  CS-greedy@w=0.2: P=21.56 R=52.41 F1=26.89 Jaccard=16.16 size=1019.0
+  CS-greedy@w=0.3: P=21.94 R=44.77 F1=24.29 Jaccard=14.55 size=847.8
+  CS-greedy@w=0.5: P=20.18 R=25.22 F1=16.48 Jaccard=9.85 size=431.5
+########################################
+{'dataset': 'cora_lcc', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 3, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'random', 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5}
+########################################
+{'dataset': 'IMDB', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'random', 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5}
+epoch: 3
+micro_f1: 74.14¡À1.33, macro_f1: 71.36¡À1.29, acc: 74.14¡À1.33
+  CS@10: P=66.89 R=1.79 F1=3.46 Jaccard=1.77
+  CS@20: P=61.31 R=3.26 F1=6.12 Jaccard=3.19
+  CS@50: P=53.06 R=6.95 F1=12.03 Jaccard=6.54
+  CS@oracle: P=33.51 R=33.51 F1=33.51 Jaccard=20.90
+  CS-greedy@w=0.0: P=25.79 R=59.24 F1=33.15 Jaccard=20.47 size=950.3
+  CS-greedy@w=0.1: P=27.03 R=54.74 F1=33.21 Jaccard=20.67 size=833.3
+  CS-greedy@w=0.2: P=27.49 R=47.40 F1=31.18 Jaccard=19.63 size=660.5
+  CS-greedy@w=0.3: P=26.43 R=31.38 F1=23.35 Jaccard=15.02 size=373.9
+  CS-greedy@w=0.5: P=16.06 R=3.04 F1=3.80 Jaccard=2.55 size=21.4
+epoch: 50
+micro_f1: 50.51¡À1.60, macro_f1: 50.60¡À1.52, acc: 50.51¡À1.60
+  CS@10: P=41.01 R=0.28 F1=0.55 Jaccard=0.28
+  CS@20: P=39.38 R=0.53 F1=1.05 Jaccard=0.53
+  CS@50: P=38.43 R=1.31 F1=2.53 Jaccard=1.28
+  CS@oracle: P=35.00 R=35.00 F1=35.00 Jaccard=21.24
+  CS-greedy@w=0.0: P=32.78 R=71.62 F1=44.32 Jaccard=28.95 size=3046.3
+  CS-greedy@w=0.1: P=32.96 R=68.08 F1=43.18 Jaccard=28.11 size=2891.6
+  CS-greedy@w=0.2: P=32.66 R=63.78 F1=41.68 Jaccard=27.02 size=2703.6
+  CS-greedy@w=0.3: P=31.18 R=55.14 F1=37.57 Jaccard=24.22 size=2333.7
+  CS-greedy@w=0.5: P=21.39 R=26.23 F1=20.20 Jaccard=12.76 size=1096.0
+########################################
+{'dataset': 'IMDB', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'random', 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'gcn', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5}
+epoch: 50
+micro_f1: 52.58¡À1.17, macro_f1: 51.69¡À1.49, acc: 52.58¡À1.17
+  CS@10: P=36.43 R=0.26 F1=0.51 Jaccard=0.26
+  CS@20: P=36.19 R=0.51 F1=1.01 Jaccard=0.51
+  CS@50: P=35.89 R=1.26 F1=2.43 Jaccard=1.23
+  CS@oracle: P=35.71 R=35.71 F1=35.71 Jaccard=21.98
+  CS-greedy@w=0.0: P=33.30 R=58.98 F1=41.66 Jaccard=26.86 size=2487.8
+  CS-greedy@w=0.1: P=33.32 R=57.17 F1=41.16 Jaccard=26.45 size=2410.4
+  CS-greedy@w=0.2: P=33.34 R=55.09 F1=40.55 Jaccard=25.96 size=2321.6
+  CS-greedy@w=0.3: P=33.38 R=52.65 F1=39.81 Jaccard=25.36 size=2215.7
+  CS-greedy@w=0.5: P=33.54 R=45.93 F1=37.26 Jaccard=23.42 size=1929.5
+########################################
+{'dataset': 'IMDB', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'random', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'gcn', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5}
+########################################
+{'dataset': 'IMDB', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5}
+epoch: 50
+micro_f1: 51.00¡À1.27, macro_f1: 50.39¡À2.48, acc: 51.00¡À1.27
+  CS@10: P=40.10 R=0.28 F1=0.55 Jaccard=0.27
+  CS@20: P=38.65 R=0.53 F1=1.05 Jaccard=0.53
+  CS@50: P=40.26 R=1.38 F1=2.67 Jaccard=1.35
+  CS@oracle: P=37.45 R=37.45 F1=37.45 Jaccard=23.36
+  CS-greedy@w=0.0: P=33.81 R=69.21 F1=44.70 Jaccard=29.58 size=2855.4
+  CS-greedy@w=0.1: P=33.83 R=66.24 F1=44.19 Jaccard=29.15 size=2719.4
+  CS-greedy@w=0.2: P=33.74 R=62.57 F1=43.50 Jaccard=28.57 size=2552.7
+  CS-greedy@w=0.3: P=32.79 R=56.41 F1=41.13 Jaccard=26.85 size=2286.4
+  CS-greedy@w=0.5: P=27.87 R=35.19 F1=29.78 Jaccard=19.01 size=1394.2
+########################################
+{'dataset': 'IMDB', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0}
+########################################
+{'dataset': 'IMDB', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0}
+epoch: 50
+micro_f1: 48.35¡À1.03, macro_f1: 47.87¡À1.55, acc: 48.35¡À1.03
+  CS@10: P=32.00 R=0.20 F1=0.40 Jaccard=0.20
+  CS@20: P=33.25 R=0.46 F1=0.90 Jaccard=0.45
+  CS@50: P=33.05 R=1.13 F1=2.18 Jaccard=1.10
+  CS@oracle: P=32.83 R=32.83 F1=32.83 Jaccard=19.86
+  CS-greedy@w=0.0: P=30.60 R=55.42 F1=38.54 Jaccard=24.69 size=2381.9
+  CS-greedy@w=0.1: P=29.73 R=52.26 F1=37.02 Jaccard=23.65 size=2244.3
+  CS-greedy@w=0.2: P=29.69 R=50.14 F1=36.44 Jaccard=23.17 size=2156.4
+  CS-greedy@w=0.3: P=29.71 R=46.85 F1=35.54 Jaccard=22.45 size=2015.7
+  CS-greedy@w=0.5: P=29.99 R=25.19 F1=26.34 Jaccard=15.67 size=1093.0
+[timing] ÑµÁ·Ê±¼ä=5602.89s, ²âÊÔÊ±¼ä=460.15s, ×ÜÔËĞĞÊ±¼ä=6063.86s (Ã¿ÂÖ¾ùÖµ=112.058s)
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'æ‰¾å‡ºåœ¨ç¤¾äº¤ç½‘ç»œä¸Šé€šè¿‡éšè”½è¿æ¥ååŒçš„ç¾¤ä½“', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 256, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 256, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50}
+epoch: 50
+micro_f1: 87.33¡À0.77, macro_f1: 87.12¡À0.83, acc: 87.33¡À0.77
+  CS@10: P=80.50 R=0.67 F1=1.34 Jaccard=0.67
+  CS@20: P=79.12 R=1.33 F1=2.61 Jaccard=1.33
+  CS@50: P=76.45 R=3.21 F1=6.14 Jaccard=3.19
+  CS@oracle: P=59.43 R=59.43 F1=59.43 Jaccard=43.49
+  CS-greedy@w=0.0: P=46.80 R=45.94 F1=40.12 Jaccard=27.95 size=1323.9
+  CS-greedy@w=0.1: P=48.08 R=44.63 F1=40.36 Jaccard=28.12 size=1241.5
+  CS-greedy@w=0.2: P=49.69 R=42.83 F1=40.46 Jaccard=28.16 size=1144.2
+  CS-greedy@w=0.3: P=51.98 R=40.69 F1=40.54 Jaccard=28.20 size=1032.8
+  CS-greedy@w=0.5: P=42.05 R=23.15 F1=25.50 Jaccard=17.73 size=495.1
+[timing] ÑµÁ·Ê±¼ä=4890.83s, ²âÊÔÊ±¼ä=337.96s, ×ÜÔËĞĞÊ±¼ä=5229.90s (Ã¿ÂÖ¾ùÖµ=97.817s)
+########################################
+{'dataset': 'DBLP', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': 'apa', 'lambda_rel_entropy': 0.0, 'sparsify_topk': None}
+########################################
+{'dataset': 'DBLP', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 256, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50}
+########################################
+{'dataset': 'DBLP', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50}
+########################################
+{'dataset': 'DBLP', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 256, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 256, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 50, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 50, 'ac_lr': 0.001, 'ac_max_size': 60, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50}
+epoch: 50
+micro_f1: 87.11¡À0.77, macro_f1: 86.89¡À0.83, acc: 87.11¡À0.77
+  CS@10: P=77.75 R=0.66 F1=1.30 Jaccard=0.66
+  CS@20: P=78.50 R=1.32 F1=2.59 Jaccard=1.32
+  CS@50: P=76.35 R=3.20 F1=6.13 Jaccard=3.18
+  CS@oracle: P=59.79 R=59.79 F1=59.79 Jaccard=43.73
+  CS-greedy@w=0.0: P=48.85 R=44.34 F1=40.62 Jaccard=28.26 size=1192.5
+  CS-greedy@w=0.1: P=50.21 R=42.99 F1=40.75 Jaccard=28.34 size=1114.1
+  CS-greedy@w=0.2: P=52.07 R=41.28 F1=40.87 Jaccard=28.42 size=1020.8
+  CS-greedy@w=0.3: P=54.41 R=38.03 F1=39.73 Jaccard=27.65 size=890.2
+  CS-greedy@w=0.5: P=40.17 R=19.16 F1=22.21 Jaccard=15.58 size=361.4
+  CS-rl: P=0.00 R=0.00 F1=0.00 Jaccard=0.00 size=1.0
+[timing] ÑµÁ·Ê±¼ä=8858.83s, ²âÊÔÊ±¼ä=381.38s, ×ÜÔËĞĞÊ±¼ä=9240.93s (Ã¿ÂÖ¾ùÖµ=177.177s)
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 200, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 200, 'resume': False, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 200, 'resume': True, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': 'ÕÒ³öÔÚÉç½»ÍøÂçÉÏÍ¨¹ıÒş±ÎÁ¬½ÓĞ­Í¬µÄÈºÌå', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 1000, 'resume': True, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50}

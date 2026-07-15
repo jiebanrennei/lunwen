@@ -28,6 +28,14 @@ class IntentGuidedEdgeModel(nn.Module):
 
         input_dim = num_hidden * 2 + intent_dim
 
+        # 意图多头注意力 (创新点一 §3.2.2): 源节点表示关注意图信息, 残差保留原特征。
+        # 意图先投到隐藏维, 与对端拼成 kv, 使注意力权重非平凡。
+        self.intent_proj = nn.Linear(intent_dim, num_hidden)
+        self.attn = nn.MultiheadAttention(
+            num_hidden, num_heads=4, dropout=drop_p, batch_first=True
+        )
+        self.attn_norm = nn.LayerNorm(num_hidden)
+
         self.mlp = nn.Sequential(
             nn.Linear(input_dim, num_hidden),
             nn.Dropout(drop_p),
@@ -63,7 +71,14 @@ class IntentGuidedEdgeModel(nn.Module):
         z_dst = z[dst]
         intent_expanded = intent_vector.unsqueeze(0).expand(num_edges, -1)
 
-        edge_features = torch.cat([z_src, z_dst, intent_expanded], dim=-1)
+        # 意图多头注意力: query=源节点, kv=[意图, 对端], 残差回源节点表示。
+        intent_h = self.intent_proj(intent_expanded)          # [E, H]
+        q = z_src.unsqueeze(1)                                # [E, 1, H]
+        kv = torch.stack([intent_h, z_dst], dim=1)            # [E, 2, H]
+        att, _ = self.attn(q, kv, kv)                         # [E, 1, H]
+        z_src_enh = self.attn_norm(z_src + att.squeeze(1))    # 残差 + LayerNorm
+
+        edge_features = torch.cat([z_src_enh, z_dst, intent_expanded], dim=-1)
         return self.mlp(edge_features)
 
 
@@ -78,21 +93,31 @@ class IntentGuidedAdversarialModel(nn.Module):
     """
 
     def __init__(self, encoder, num_hidden, intent_dim, num_edge_hidden,
-                 drop_p=0.1, num_cand_per_node=5):
+                 drop_p=0.1, num_cand_per_node=5, num_relations=1):
         super().__init__()
 
         self.encoder = encoder
         self.num_cand_per_node = num_cand_per_node
-        self._cand_edges = None  # 候选新边缓存: 首次 forward 算一次后复用, 避免每步 N×N
+        self.num_relations = num_relations
 
-        # 两套独立边头: 意图分别引导"减边(对抗)"与"加边/重构(重构)",
-        # 使两个视图的差异真正来自意图,而非仅 Gumbel 噪声与边方向。
-        self.edge_model_adv = IntentGuidedEdgeModel(
-            num_hidden, intent_dim, num_edge_hidden, drop_p
-        )
-        self.edge_model_rec = IntentGuidedEdgeModel(
-            num_hidden, intent_dim, num_edge_hidden, drop_p
-        )
+        if num_relations > 1:
+            self.edge_model_adv = nn.ModuleList([
+                IntentGuidedEdgeModel(num_hidden, intent_dim, num_edge_hidden, drop_p)
+                for _ in range(num_relations)
+            ])
+            self.edge_model_rec = nn.ModuleList([
+                IntentGuidedEdgeModel(num_hidden, intent_dim, num_edge_hidden, drop_p)
+                for _ in range(num_relations)
+            ])
+            self._cand_edges = [None] * num_relations
+        else:
+            self.edge_model_adv = IntentGuidedEdgeModel(
+                num_hidden, intent_dim, num_edge_hidden, drop_p
+            )
+            self.edge_model_rec = IntentGuidedEdgeModel(
+                num_hidden, intent_dim, num_edge_hidden, drop_p
+            )
+            self._cand_edges = None
 
     def filter_upper_edges(self, edges):
         u, v = edges[0], edges[1]
@@ -106,39 +131,51 @@ class IntentGuidedAdversarialModel(nn.Module):
         屏蔽已有边与自环,返回去重后的上三角候选边 [2, M]。
 
         仅做"选择"(no_grad);候选边的打分在 forward 中用 edge_model_rec 完成,
-        梯度照常回流。小图直接用 N×N 相似度;节点数很大时应改用分块/近邻索引。
+        梯度照常回流。相似度按行分块计算,峰值内存 chunk×N 而非 N×N。
         """
         k = self.num_cand_per_node
         if k <= 0 or num_nodes <= 1:
             return torch.zeros((2, 0), dtype=torch.long, device=z.device)
 
-        zc = F.normalize(z, dim=-1)
-        sim = zc @ zc.t()                       # [N, N]
-        sim.fill_diagonal_(float('-inf'))
-        sim[upper_edges[0], upper_edges[1]] = float('-inf')
-        sim[upper_edges[1], upper_edges[0]] = float('-inf')
+        with torch.no_grad():
+            zc = F.normalize(z, dim=-1)
+            k = min(k, num_nodes - 1)
 
-        k = min(k, num_nodes - 1)
-        vals, idx = sim.topk(k, dim=1)          # [N, k]
-        valid = torch.isfinite(vals)
-        src = torch.arange(num_nodes, device=z.device).unsqueeze(1).expand(-1, k)[valid]
-        dst = idx[valid]
+            # 需要屏蔽的已有边(两个方向),避免摊出 N×N 再逐元素填 -inf
+            msrc = torch.cat([upper_edges[0], upper_edges[1]])
+            mdst = torch.cat([upper_edges[1], upper_edges[0]])
 
-        mask = src < dst                        # 取上三角,避免方向重复
-        u, v = src[mask], dst[mask]
-        if u.numel() == 0:
-            return torch.zeros((2, 0), dtype=torch.long, device=z.device)
-        pair = torch.unique(u * num_nodes + v)  # 去重
-        return torch.stack([pair // num_nodes, pair % num_nodes], dim=0)
+            chunk = min(num_nodes, 2048)
+            src_list, dst_list = [], []
+            for c0 in range(0, num_nodes, chunk):
+                c1 = min(c0 + chunk, num_nodes)
+                rows = torch.arange(c0, c1, device=z.device)
+                sim_c = zc[c0:c1] @ zc.t()                          # [c1-c0, N]
+                sim_c[rows - c0, rows] = float('-inf')             # 自环
+                sel = (msrc >= c0) & (msrc < c1)
+                sim_c[msrc[sel] - c0, mdst[sel]] = float('-inf')   # 已有边
+                vals, idx = sim_c.topk(k, dim=1)                   # [c1-c0, k]
+                valid = torch.isfinite(vals)
+                src_list.append(rows.unsqueeze(1).expand(-1, k)[valid])
+                dst_list.append(idx[valid])
+
+            src = torch.cat(src_list)
+            dst = torch.cat(dst_list)
+            mask = src < dst                    # 取上三角,避免方向重复
+            u, v = src[mask], dst[mask]
+            if u.numel() == 0:
+                return torch.zeros((2, 0), dtype=torch.long, device=z.device)
+            pair = torch.unique(u * num_nodes + v)  # 去重
+            return torch.stack([pair // num_nodes, pair % num_nodes], dim=0)
 
     def refresh_candidate_edges(self, x, edge_index, edge_weight, intent_vector):
         """手动刷新候选新边缓存(用当前嵌入重新选一批)。"""
-        z = self.encoder(x, edge_index, edge_weight)
+        z = self.encoder(x, edge_index, edge_weight, intent_vector)
         upper_edges = self.filter_upper_edges(edge_index)
         self._cand_edges = self.generate_candidate_edges(z, upper_edges, x.size(0))
 
     def forward(self, x, edge_index, edge_weight, intent_vector):
-        z = self.encoder(x, edge_index, edge_weight)
+        z = self.encoder(x, edge_index, edge_weight, intent_vector)
 
         upper_edges = self.filter_upper_edges(edge_index)
         lower_edges = torch.stack([upper_edges[1], upper_edges[0]], dim=0)
@@ -171,6 +208,64 @@ class IntentGuidedAdversarialModel(nn.Module):
             'cand_edges': cand_edges,
             'cand_edge_logits': cand_edge_logits,
         }
+
+    def _edge_info_one(self, z, edge_index, intent_vector, adv_head, rec_head,
+                       cand_slot_idx):
+        """对单条关系的节点表示 z 生成 adv/rec/cand 边信息 dict。
+
+        z 用该关系自己的 HII-GNN 嵌入, 保证 PAP 候选边用 PAP 表示打分,
+        语义自洽。cand_slot_idx 指定 self._cand_edges 列表中的缓存槽位。
+        """
+        upper_edges = self.filter_upper_edges(edge_index)
+        lower_edges = torch.stack([upper_edges[1], upper_edges[0]], dim=0)
+
+        upper_edge_logits = adv_head(z, upper_edges, intent_vector)
+        lower_edge_logits = rec_head(z, lower_edges, intent_vector)
+
+        upper_edge_fea = torch.cat([z[upper_edges[0]], z[upper_edges[1]]], dim=1)
+        lower_edge_fea = torch.cat([z[lower_edges[0]], z[lower_edges[1]]], dim=1)
+
+        if self._cand_edges[cand_slot_idx] is None:
+            self._cand_edges[cand_slot_idx] = self.generate_candidate_edges(
+                z, upper_edges, z.size(0))
+        cand_edges = self._cand_edges[cand_slot_idx]
+        if cand_edges.size(1) > 0:
+            cand_edge_logits = rec_head(z, cand_edges, intent_vector)
+        else:
+            cand_edge_logits = z.new_zeros((0, 1))
+
+        return {
+            'upper_edge_logits': upper_edge_logits,
+            'lower_edge_logits': lower_edge_logits,
+            'upper_edge_fea': upper_edge_fea,
+            'lower_edge_fea': lower_edge_fea,
+            'cand_edges': cand_edges,
+            'cand_edge_logits': cand_edge_logits,
+        }
+
+    def forward_multi(self, x, edge_index_list, edge_weight_list, intent_vector):
+        """多关系: 每条 meta-path 用自己的 HII-GNN 嵌入分别扰动。
+
+        返回长度 R 的 list, 每个元素结构与 forward 的 dict 相同。
+        """
+        zs, _, _ = self.encoder.encode_per_relation(
+            x, edge_index_list, edge_weight_list, intent_vector)
+        infos = []
+        for r in range(self.num_relations):
+            infos.append(self._edge_info_one(
+                zs[r], edge_index_list[r], intent_vector,
+                self.edge_model_adv[r], self.edge_model_rec[r], r))
+        return infos
+
+    def refresh_candidate_edges_multi(self, x, edge_index_list,
+                                      edge_weight_list, intent_vector):
+        """逐关系刷新候选新边缓存(各自嵌入空间内重选)。"""
+        zs, _, _ = self.encoder.encode_per_relation(
+            x, edge_index_list, edge_weight_list, intent_vector)
+        for r in range(self.num_relations):
+            upper = self.filter_upper_edges(edge_index_list[r])
+            self._cand_edges[r] = self.generate_candidate_edges(
+                zs[r], upper, x.size(0))
 
 
 class IntentContrastiveModel(nn.Module):
@@ -206,8 +301,8 @@ class IntentContrastiveModel(nn.Module):
         neg_intents = F.normalize(neg_intents, dim=-1)
         self.register_buffer('neg_intents', neg_intents)
 
-    def forward(self, x, edge_index, edge_weight):
-        return self.encoder(x, edge_index, edge_weight)
+    def forward(self, x, edge_index, edge_weight, intent=None):
+        return self.encoder(x, edge_index, edge_weight, intent)
 
     def projection(self, z):
         z = F.elu(self.fc1(z))
@@ -266,16 +361,30 @@ class IntentContrastiveModel(nn.Module):
 
         return 0.5 * (loss_adv + loss_rec)
 
+    def reconstruction_loss(self, z_adv, z_rec, suspicious_idx):
+        """
+        对抗特征保持损失: 可疑节点在两视图中应呈现不同的邻近分布。
+        对抗视图中分散 (被稀疏化), 重构视图中聚集 (被恢复)。
+        用 KL 散度度量差异, 鼓励互补。
+        """
+        sa = F.normalize(z_adv[suspicious_idx], dim=-1)
+        sr = F.normalize(z_rec[suspicious_idx], dim=-1)
+        p_adv = F.log_softmax(sa @ sa.t() / self.tau, dim=-1)
+        p_rec = F.softmax(sr @ sr.t() / self.tau, dim=-1)
+        return F.kl_div(p_adv, p_rec, reduction='batchmean')
+
     def total_loss(self, z_adv, z_rec, intent_vector, reg_loss,
                    reg_lambda=0.5, adv_lambda=1.0, edge_fea_adv=None,
-                   edge_fea_rec=None):
+                   edge_fea_rec=None, suspicious_idx=None, lambda_rec=0.1):
         """
-        总损失 = L_contrastive + λ_intent * L_intent + λ_adv * L_edge - λ_reg * L_reg
+        总损失 = L_contrastive + λ_intent * L_intent + λ_adv * L_edge
+                 - λ_reg * L_reg + λ_rec * L_reconstruction
 
         - L_contrastive: 对比损失,拉近同节点在两视图中的表示
         - L_intent: 意图一致性,确保两视图都与意图对齐
         - L_edge: 边特征一致性 (继承自 EDA-GCL)
         - L_reg: 对抗正则化,鼓励两视图差异
+        - L_reconstruction: 可疑节点在两视图中的 KL 散度 (创新点二/四)
         """
         l_contrastive = self.contrastive_loss(z_adv, z_rec)
         l_intent = self.intent_consistency_loss(z_adv, z_rec, intent_vector)
@@ -288,9 +397,34 @@ class IntentContrastiveModel(nn.Module):
 
         loss = loss - reg_lambda * reg_loss
 
+        l_rec = torch.tensor(0.0, device=z_adv.device)
+        if suspicious_idx is not None and suspicious_idx.numel() > 1:
+            l_rec = self.reconstruction_loss(z_adv, z_rec, suspicious_idx)
+            loss = loss + lambda_rec * l_rec
+
         return loss, {
             'contrastive': l_contrastive.item(),
             'intent': l_intent.item(),
             'reg': reg_loss.item(),
+            'reconstruction': l_rec.item(),
             'total': loss.item(),
         }
+
+
+class QueryIntentGenerator(nn.Module):
+    """根据查询节点特征动态生成意图向量。
+
+    训练时每轮随机采样查询节点 → 生成意图 → 让编码器学会响应不同意图;
+    评估社区搜索时每个查询节点用自己的意图重新编码全图。
+    """
+
+    def __init__(self, in_features, intent_dim):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(in_features, intent_dim * 2),
+            nn.ReLU(),
+            nn.Linear(intent_dim * 2, intent_dim)
+        )
+
+    def forward(self, x_query):
+        return F.normalize(self.mlp(x_query), dim=-1)

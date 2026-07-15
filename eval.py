@@ -1,4 +1,5 @@
 
+import os
 import torch
 import torch.nn.functional as F
 import functools
@@ -164,7 +165,60 @@ def label_classification(embeddings, data, dataset_name, ratio = 0.1, test_repea
     return micro_f1.mean().item()*100, micro_f1.std().item()*100, macro_f1.mean().item()*100, macro_f1.std().item()*100, acc.mean().item()*100, acc.std().item()*100
 
 
-def community_search(embeddings, data, topk=(10, 20, 50), num_queries=None, seed=0):
+def _boost_multiplier(node_boost, boost_factor, N):
+    """把可疑分 [0,1] 转成相似度乘子: 满分节点 ×boost_factor, 零分 ×1。"""
+    if node_boost is None:
+        return None
+    nb = node_boost.detach().cpu().numpy() if hasattr(node_boost, 'detach') \
+        else np.asarray(node_boost)
+    nb = nb.astype(np.float64)
+    rng = nb.max() - nb.min()
+    nb = (nb - nb.min()) / (rng + 1e-8)
+    return 1.0 + (boost_factor - 1.0) * nb
+
+
+def build_fixed_queries(data, num_queries=40, seed=0, query_file=None):
+    """构建/加载一组固定查询节点, 用于跨配置(GCN vs HII)可复现对比 (对齐 CLUHCS 40 查询协议)。
+
+    优先从 query_file 读取(每行一个节点 id); 文件不存在时按类别分层采样
+    num_queries 个节点并写入 query_file, 之后所有配置都复用同一组查询。
+    """
+    y = data.y.detach().cpu().numpy()
+    N = len(y)
+
+    if query_file is not None and os.path.exists(query_file):
+        with open(query_file) as f:
+            q = [int(line.strip()) for line in f if line.strip()]
+        print(f"[query] 载入固定查询 {len(q)} 个 <- {query_file}")
+        return np.array(q)
+
+    rng = np.random.default_rng(seed)
+    labels = np.unique(y)
+    per = max(1, num_queries // len(labels))
+    chosen = []
+    for lb in labels:
+        idx = np.where(y == lb)[0]
+        take = min(per, len(idx))
+        chosen.extend(rng.choice(idx, size=take, replace=False).tolist())
+    if len(chosen) < num_queries:
+        remaining = np.setdiff1d(np.arange(N), np.array(chosen))
+        extra = rng.choice(remaining,
+                           size=min(num_queries - len(chosen), len(remaining)),
+                           replace=False)
+        chosen.extend(extra.tolist())
+    chosen = np.array(chosen[:num_queries])
+
+    if query_file is not None:
+        os.makedirs(os.path.dirname(query_file) or '.', exist_ok=True)
+        with open(query_file, 'w') as f:
+            for q in chosen:
+                f.write(f"{int(q)}\n")
+        print(f"[query] 生成固定查询 {len(chosen)} 个 (分层采样) -> {query_file}")
+    return chosen
+
+
+def community_search(embeddings, data, topk=(10, 20, 50), num_queries=None, seed=0,
+                     node_boost=None, boost_factor=1.5, queries=None):
     """
     基于嵌入的社区搜索评估 (Precision / Recall / F1 / Jaccard)。
 
@@ -186,13 +240,19 @@ def community_search(embeddings, data, topk=(10, 20, 50), num_queries=None, seed
     emb = F.normalize(embeddings.detach().cpu(), dim=-1)
     N = emb.shape[0]
 
-    if num_queries is None or num_queries >= N:
+    if queries is not None:
+        queries = np.asarray(queries)
+    elif num_queries is None or num_queries >= N:
         queries = np.arange(N)
     else:
         rng = np.random.default_rng(seed)
         queries = rng.choice(N, size=num_queries, replace=False)
 
     sims = (emb @ emb.t()).numpy()
+
+    mult = _boost_multiplier(node_boost, boost_factor, N)
+    if mult is not None:
+        sims = sims * mult[None, :]      # 对可疑候选节点的相似度加权
 
     # 预计算每个标签的节点集合 (避免每次查询重复 np.where)
     label_sets = {}
@@ -380,7 +440,8 @@ def _best_community_for_w(node_order, cum_sims, avg, w):
 
 def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             num_queries=None, seed=0, max_iter=10000,
-                            compute_structure=False):
+                            compute_structure=False,
+                            node_boost=None, boost_factor=1.5, queries=None):
     """
     贪心 + 密度自适应的社区搜索评估。
 
@@ -394,13 +455,20 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
     emb = F.normalize(embeddings.detach().cpu(), dim=-1)
     N = emb.shape[0]
 
-    if num_queries is None or num_queries >= N:
+    if queries is not None:
+        queries = np.asarray(queries)
+    elif num_queries is None or num_queries >= N:
         queries = np.arange(N)
     else:
         rng = np.random.default_rng(seed)
         queries = rng.choice(N, size=num_queries, replace=False)
 
     sims = (emb @ emb.t()).numpy()
+
+    mult = _boost_multiplier(node_boost, boost_factor, N)
+    if mult is not None:
+        sims = sims * mult[None, :]
+
     adj = _build_adj_list(data.edge_index, N)
     total_vol = sum(len(a) for a in adj) if compute_structure else 0
 
@@ -468,5 +536,223 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
               f"F1={results[w]['f1']:.2f} "
               f"Jaccard={results[w]['jaccard']:.2f} "
               f"size={results[w]['avg_size']:.1f}{extra}")
+    return results
+
+
+def community_search_rl(builder, embeddings, data, queries,
+                        node_boost=None, intent=None):
+    """
+    Actor-Critic 社区搜索评测 (§7.2 Step4)。
+    对每个查询, 用训练好的 builder 从查询节点扩展出社区集合, 再与真值标签比对。
+    标签仅用于计算 P/R/F1 (评测), 社区生成过程本身自监督、不看标签。
+
+    Returns:
+        dict: {'precision','recall','f1','jaccard','avg_size'}
+    """
+    y = data.y.detach().cpu().numpy()
+    N = embeddings.size(0)
+    adj = _build_adj_list(data.edge_index, N)
+
+    label_sets = {}
+    for label in np.unique(y):
+        label_sets[label] = set(np.where(y == label)[0].tolist())
+
+    queries = np.asarray(queries)
+    P, R, Fm, J, sizes = [], [], [], [], []
+
+    for q in queries:
+        truth = label_sets[y[q]].copy()
+        truth.discard(int(q))
+        if len(truth) == 0:
+            continue
+        comm = builder.build(embeddings, adj, int(q), intent,
+                             node_boost=node_boost, greedy=True)
+        pred = set(comm)
+        pred.discard(int(q))
+
+        inter = len(pred & truth)
+        union = len(pred | truth)
+        p = inter / len(pred) if len(pred) > 0 else 0.0
+        r = inter / len(truth)
+        f = 2 * p * r / (p + r) if (p + r) > 0 else 0.0
+        j = inter / union if union > 0 else 0.0
+        P.append(p); R.append(r); Fm.append(f); J.append(j)
+        sizes.append(len(comm))
+
+    results = {
+        'precision': float(np.mean(P)) * 100 if P else 0.0,
+        'recall': float(np.mean(R)) * 100 if R else 0.0,
+        'f1': float(np.mean(Fm)) * 100 if Fm else 0.0,
+        'jaccard': float(np.mean(J)) * 100 if J else 0.0,
+        'avg_size': float(np.mean(sizes)) if sizes else 0.0,
+    }
+    print(f"[CS-rl] P={results['precision']:.2f} "
+          f"R={results['recall']:.2f} "
+          f"F1={results['f1']:.2f} "
+          f"Jaccard={results['jaccard']:.2f} "
+          f"size={results['avg_size']:.1f}")
+    return results
+
+
+def community_search_dynamic(encoder_fn, intent_generator, data, edge_weight,
+                              topk=(10, 20, 50, 'oracle'), num_queries=200, seed=0,
+                              node_boost=None, boost_factor=1.5, queries=None,
+                              edge_index=None):
+    """
+    动态意图社区搜索: 每个查询节点根据自己的特征生成意图,
+    用该意图重新编码全图, 再按余弦相似度排序。
+
+    比静态版慢 (每查询一次 forward), 但意图真正按查询适配。
+    """
+    y = data.y.detach().cpu().numpy()
+    N = data.x.size(0)
+
+    if queries is not None:
+        queries = np.asarray(queries)
+    elif num_queries is None or num_queries >= N:
+        queries = np.arange(N)
+    else:
+        rng_np = np.random.default_rng(seed)
+        queries = rng_np.choice(N, size=num_queries, replace=False)
+
+    label_sets = {}
+    for label in np.unique(y):
+        label_sets[label] = set(np.where(y == label)[0].tolist())
+
+    mult = _boost_multiplier(node_boost, boost_factor, N)
+
+    per_k = {k: {'P': [], 'R': [], 'F': [], 'J': []} for k in topk}
+
+    for q in queries:
+        truth = label_sets[y[q]].copy()
+        truth.discard(int(q))
+        if len(truth) == 0:
+            continue
+
+        with torch.no_grad():
+            intent = intent_generator(data.x[q])
+            ei = data.edge_index if edge_index is None else edge_index
+            emb = encoder_fn(data.x, ei, edge_weight, intent)
+            emb_norm = F.normalize(emb, dim=-1)
+            sims_q = (emb_norm[q] @ emb_norm.t()).cpu().numpy()
+
+        if mult is not None:
+            sims_q = sims_q * mult
+
+        order = np.argsort(-sims_q)
+        order = order[order != q]
+
+        for k in topk:
+            actual_k = len(truth) if k == 'oracle' else k
+            pred = set(order[:actual_k].tolist())
+
+            inter = len(pred & truth)
+            union = len(pred | truth)
+            p = inter / len(pred) if len(pred) > 0 else 0.0
+            r = inter / len(truth)
+            f = 2 * p * r / (p + r) if (p + r) > 0 else 0.0
+            j = inter / union if union > 0 else 0.0
+            per_k[k]['P'].append(p); per_k[k]['R'].append(r)
+            per_k[k]['F'].append(f); per_k[k]['J'].append(j)
+
+    results = {}
+    for k in topk:
+        a = per_k[k]
+        k_label = 'oracle' if k == 'oracle' else str(k)
+        results[k] = {
+            'precision': float(np.mean(a['P'])) * 100,
+            'recall': float(np.mean(a['R'])) * 100,
+            'f1': float(np.mean(a['F'])) * 100,
+            'jaccard': float(np.mean(a['J'])) * 100,
+        }
+        print(f'[CS-dyn] k={k_label:<7s} '
+              f"P={results[k]['precision']:.2f} "
+              f"R={results[k]['recall']:.2f} "
+              f"F1={results[k]['f1']:.2f} "
+              f"Jaccard={results[k]['jaccard']:.2f}")
+    return results
+
+
+def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_weight,
+                                     w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
+                                     num_queries=200, seed=0, max_iter=10000,
+                                     node_boost=None, boost_factor=1.5, queries=None,
+                                     edge_index=None):
+    """
+    动态意图 + 贪心扩展社区搜索。
+    每个查询节点生成意图→重新编码→贪心扩展。
+    """
+    y = data.y.detach().cpu().numpy()
+    N = data.x.size(0)
+
+    if queries is not None:
+        queries = np.asarray(queries)
+    elif num_queries is None or num_queries >= N:
+        queries = np.arange(N)
+    else:
+        rng_np = np.random.default_rng(seed)
+        queries = rng_np.choice(N, size=num_queries, replace=False)
+
+    adj = _build_adj_list(data.edge_index, N)
+
+    label_sets = {}
+    for label in np.unique(y):
+        label_sets[label] = set(np.where(y == label)[0].tolist())
+
+    mult = _boost_multiplier(node_boost, boost_factor, N)
+
+    accum = {w: {'P': [], 'R': [], 'F': [], 'J': [], 'sizes': []} for w in w_list}
+
+    for q in queries:
+        truth = label_sets[y[q]].copy()
+        truth.discard(int(q))
+        if len(truth) == 0:
+            continue
+
+        with torch.no_grad():
+            intent = intent_generator(data.x[q])
+            ei = data.edge_index if edge_index is None else edge_index
+            emb = encoder_fn(data.x, ei, edge_weight, intent)
+            emb_norm = F.normalize(emb, dim=-1)
+            sims_q = (emb_norm[q] @ emb_norm.t()).cpu().numpy()
+
+        if mult is not None:
+            sims_q = sims_q * mult
+
+        avg = float(sims_q.mean())
+        node_order, cum_sims = _greedy_expand_trace(q, sims_q, adj, max_iter)
+
+        for w in w_list:
+            comm = _best_community_for_w(node_order, cum_sims, avg, w)
+            pred = set(comm)
+            pred.discard(int(q))
+
+            inter = len(pred & truth)
+            union = len(pred | truth)
+            p = inter / len(pred) if len(pred) > 0 else 0.0
+            r = inter / len(truth)
+            f = 2 * p * r / (p + r) if (p + r) > 0 else 0.0
+            j = inter / union if union > 0 else 0.0
+
+            a = accum[w]
+            a['P'].append(p); a['R'].append(r); a['F'].append(f); a['J'].append(j)
+            a['sizes'].append(len(comm))
+
+    results = {}
+    for w in w_list:
+        a = accum[w]
+        results[w] = {
+            'precision': float(np.mean(a['P'])) * 100 if a['P'] else 0.0,
+            'recall': float(np.mean(a['R'])) * 100 if a['R'] else 0.0,
+            'f1': float(np.mean(a['F'])) * 100 if a['F'] else 0.0,
+            'jaccard': float(np.mean(a['J'])) * 100 if a['J'] else 0.0,
+            'avg_size': float(np.mean(a['sizes'])) if a['sizes'] else 0.0,
+        }
+        print(f'[CS-greedy-dyn] w={w:<4} '
+              f"P={results[w]['precision']:.2f} "
+              f"R={results[w]['recall']:.2f} "
+              f"F1={results[w]['f1']:.2f} "
+              f"Jaccard={results[w]['jaccard']:.2f} "
+              f"size={results[w]['avg_size']:.1f}")
     return results
 

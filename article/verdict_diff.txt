@@ -1,0 +1,111 @@
+file1=so_ai_zhixiao_search_feedback1.csv  行数=280
+file2=so_ai_zhixiao_search_feedback2.csv  行数=280
+共同 id 数=280  仅 file1=0  仅 file2=0
+复核结果(verdict)不一致条数=104
+
+      id | file1_verdict  | file2_verdict  | category
+----------------------------------------------------------------------
+    8720 | valid          | uncertain      | 搜索展现内容和网页内容不一致
+    8723 | invalid        | uncertain      | 其他
+    8728 | valid          | invalid        | 内容虚假、错误
+    8732 | invalid        | uncertain      | 搜索展现内容和网页内容不一致
+    8737 | invalid        | valid          | 其他
+    8742 | valid          | invalid        | 搜索展现内容和网页内容不一致
+    8749 | invalid        | valid          | 网站死链、打不开、内容已删除
+    8755 | dead_link      | valid          | 内容异常（色情、赌博）
+    8756 | dead_link      | valid          | 内容异常（色情、赌博）
+    8757 | dead_link      | valid          | 内容异常（色情、赌博）
+    8759 | invalid        | valid          | 搜索展现内容和网页内容不一致
+    8761 | valid          | uncertain      | 内容异常（色情、赌博）
+    8763 | invalid        | valid          | 网站死链、打不开、内容已删除
+    8764 | invalid        | valid          | 网站死链、打不开、内容已删除
+    8766 | valid          | invalid        | 网站死链、打不开、内容已删除
+    8769 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8774 | invalid        | valid          | 内容虚假、错误
+    8775 | dead_link      | invalid        | 网站死链、打不开、内容已删除
+    8776 | invalid        | uncertain      | 内容异常（色情、赌博）
+    8778 | invalid        | valid          | 内容异常（色情、赌博）
+    8779 | dead_link      | uncertain      | 内容异常（色情、赌博）
+    8783 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8784 | invalid        | uncertain      | 其他
+    8786 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8788 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8790 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8791 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8793 | dead_link      | uncertain      | 网站死链、打不开、内容已删除
+    8794 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8801 | valid          | invalid        | 网站死链、打不开、内容已删除
+    8802 |                | valid          | 其他问题及产品建议
+    8805 |                | valid          | 广告信息质量差
+    8806 |                | valid          | 广告信息质量差
+    8810 |                | valid          | 广告信息质量差
+    8811 | dead_link      | uncertain      | 内容异常（色情、赌博）
+    8813 |                | valid          | 广告信息质量差
+    8814 | invalid        | valid          | 网站死链、打不开、内容已删除
+    8815 | invalid        | uncertain      | 内容侵权、侵犯隐私
+    8830 | invalid        | valid          | 图片未打开、色情
+    8832 | invalid        | valid          | 网站死链、打不开、内容已删除
+    8833 | invalid        | valid          | 内容虚假、错误
+    8835 | uncertain      | invalid        | 内容异常（色情、赌博）
+    8837 | invalid        | uncertain      | 内容异常（色情、赌博）
+    8847 | valid          | uncertain      | 网站死链、打不开、内容已删除
+    8851 | valid          | invalid        | 网站死链、打不开、内容已删除
+    8853 | valid          | invalid        | 网站死链、打不开、内容已删除
+    8855 | invalid        | valid          | 网站死链、打不开、内容已删除
+    8858 | valid          | uncertain      | 网站死链、打不开、内容已删除
+    8859 | dead_link      | valid          | 内容异常（色情、赌博）
+    8861 | valid          | uncertain      | 网站死链、打不开、内容已删除
+    8864 | valid          | uncertain      | 网站死链、打不开、内容已删除
+    8865 | dead_link      | invalid        | 网站死链、打不开、内容已删除
+    8867 | dead_link      | uncertain      | 内容异常（色情、赌博）
+    8868 | dead_link      | valid          | 内容异常（色情、赌博）
+    8870 | dead_link      | valid          | 内容异常（色情、赌博）
+    8873 | valid          | invalid        | 本条结果与搜索词无关
+    8877 | invalid        | uncertain      | 内容异常（色情、赌博）
+    8878 | dead_link      | uncertain      | 内容异常（色情、赌博）
+    8880 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8882 | invalid        | valid          | 网站死链、打不开、内容已删除
+    8884 | invalid        | uncertain      | 内容异常（色情、赌博）
+    8885 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8887 | invalid        | valid          | 整个页面搜索结果质量差
+    8891 | dead_link      | uncertain      | 网站死链、打不开、内容已删除
+    8892 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8893 | invalid        | uncertain      | 广告内容含违法信息和欺诈信息
+    8895 | invalid        | uncertain      | 内容过期、失效
+    8896 | invalid        | uncertain      | 内容过期、失效
+    8897 | uncertain      | invalid        | 内容过期、失效
+    8901 | invalid        | uncertain      | 其他
+    8902 | invalid        | uncertain      | 内容异常（色情、赌博）
+    8903 | dead_link      | uncertain      | 网站死链、打不开、内容已删除
+    8906 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8913 | invalid        | uncertain      | 内容侵权、侵犯隐私
+    8914 | invalid        | uncertain      | 内容侵权、侵犯隐私
+    8915 |                | valid          | 广告信息质量差
+    8916 | uncertain      | invalid        | 内容异常（色情、赌博）
+    8918 | invalid        | valid          | 提示语不合理
+    8920 | invalid        | valid          | 网站死链、打不开、内容已删除
+    8922 | invalid        | valid          | 网站死链、打不开、内容已删除
+    8923 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8924 | invalid        | valid          | 网站死链、打不开、内容已删除
+    8925 | invalid        | valid          | 网站死链、打不开、内容已删除
+    8926 | dead_link      | invalid        | 网站死链、打不开、内容已删除
+    8928 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8929 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8930 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8931 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8932 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8936 |                | valid          | 其他问题及产品建议
+    8937 | invalid        | uncertain      | 提示语不合理
+    8940 | dead_link      | invalid        | 网站死链、打不开、内容已删除
+    8943 | dead_link      | valid          | 网站死链、打不开、内容已删除
+    8944 | invalid        | valid          | 内容侵权、侵犯隐私
+    8945 | valid          | invalid        | 网站死链、打不开、内容已删除
+    8947 | invalid        | valid          | 内容虚假、错误
+    8948 | dead_link      | uncertain      | 内容异常（色情、赌博）
+    8949 | invalid        | uncertain      | 其他
+    8950 | dead_link      | valid          | 内容异常（色情、赌博）
+    8951 | dead_link      | valid          | 内容异常（色情、赌博）
+    8955 | dead_link      | uncertain      | 内容异常（色情、赌博）
+    8957 | valid          | invalid        | 网站死链、打不开、内容已删除
+    8967 | dead_link      | uncertain      | 内容异常（色情、赌博）
+    8973 | invalid        | uncertain      | 内容过期、失效

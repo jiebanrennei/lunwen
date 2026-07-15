@@ -94,7 +94,8 @@ class Encoder(torch.nn.Module):
 
         self.activation = activation
 
-    def forward(self, x, edge_index, edge_weight):
+    def forward(self, x, edge_index, edge_weight, intent=None):
+        # intent 形参仅为与 HII-GNN 接口对齐, vanilla GCN 忽略它
         for i in range(self.num_layers):
             x = self.conv[i](x, edge_index, edge_weight)
             x = self.dropout(x)
