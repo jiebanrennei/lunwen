@@ -1,0 +1,12 @@
+[log] 运行日志写入: log\run_ACM_20260713_111018.log
+Using CPU
+  [sparsify] psp.npz: 4338213 -> 344296 edges (avg_deg 1079 -> 86, top-k=50)
+[data] 多关系 R=2: pap(53834 edges), psp(344296 edges)
+[intent] dynamic query-based, dim=256
+[encoder] MultiRelation+ICRA  R=2 hii_heads=4 icra_heads=4 icra_dim=128
+(T) | Epoch=001, loss=10.9126, con=8.3644, intent=4.9328, rec=0.0010, this epoch 120.8066, total 120.8066  alpha=[pap:0.494, psp:0.506]
+(T) | Epoch=002, loss=9.9444, con=8.5798, intent=3.7827, rec=0.0028, this epoch 133.4498, total 254.2564
+(T) | Epoch=003, loss=9.4739, con=8.4965, intent=3.0988, rec=0.0034, this epoch 117.2596, total 371.5160
+(T) | Epoch=004, loss=9.0979, con=8.2480, intent=2.7842, rec=0.0054, this epoch 138.2758, total 509.7918
+(T) | Epoch=005, loss=8.9501, con=8.1355, intent=2.6506, rec=0.0058, this epoch 128.2264, total 638.0182
+(T) | Epoch=006, loss=8.7835, con=7.9708, intent=2.6187, rec=0.0084, this epoch 200.8949, total 838.9131

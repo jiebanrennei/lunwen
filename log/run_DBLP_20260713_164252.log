@@ -1,0 +1,56 @@
+[log] 运行日志写入: log\run_DBLP_20260713_164252.log
+Using CPU
+Using CPU
+  [sparsify] apcpa.npz: 5000495 -> 394878 edges (avg_deg 1233 -> 97, top-k=50)
+  [sparsify] aptpa.npz: 7043571 -> 392042 edges (avg_deg 1736 -> 97, top-k=50)
+[data] 多关系 R=3: apa(7056 edges), apcpa(394878 edges), aptpa(392042 edges)
+[intent] dynamic query-based, dim=256
+[encoder] MultiRelation+ICRA  R=3 hii_heads=4 icra_heads=4 icra_dim=128
+Traceback (most recent call last):
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\train_ig.py", line 423, in <module>
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\train_ig.py", line 368, in _build_views_multi
+    infos = adv_m.forward_multi(data.x, data.edge_index_list, ones_list, intent)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\ig_model.py", line 236, in forward_multi
+    zs, _, _ = self.encoder.encode_per_relation(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\multi_relation_fusion.py", line 105, in encode_per_relation
+    zs.append(self.encoders[r](x, edge_index_list[r], ew, intent))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\hii_gnn.py", line 162, in forward
+    h = self.local(x, edge_index, edge_weight, intent_h)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\hii_gnn.py", line 65, in forward
+    out = self.propagate(edge_index, x=h, gate=gate,
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zhaobin3\AppData\Local\Temp\hii_gnn_LocalIntentInjectionLayer_propagate_h9o0_sws.py", line 216, in propagate
+    out = self.message(
+          ^^^^^^^^^^^^^
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\hii_gnn.py", line 74, in message
+    cat = torch.cat([x_i_gated, x_j], dim=-1)                 # [E,heads,2*hd]
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+Exception ignored in atexit callback: <function reset_all at 0x00000200C77E9DA0>
+Traceback (most recent call last):
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\colorama\initialise.py", line 34, in reset_all
+    AnsiToWin32(orig_stdout).reset_all()
+    ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\colorama\ansitowin32.py", line 96, in __init__
+    conversion_supported = on_windows and winapi_test()
+                                          ^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\colorama\win32.py", line 116, in winapi_test
+    (_GetStdHandle(STDOUT), _GetStdHandle(STDERR)))
+     ^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt: 

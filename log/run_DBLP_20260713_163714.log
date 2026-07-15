@@ -1,0 +1,60 @@
+[log] 运行日志写入: log\run_DBLP_20260713_163714.log
+Using CPU
+Using CPU
+[intent] dynamic query-based, dim=256
+[encoder] HII-GNN  layers=2 heads=4
+(T) | Epoch=001, loss=9.8371, con=7.3559, intent=5.0204, rec=0.0077, this epoch 10.2809, total 10.2809
+(T) | Epoch=002, loss=9.3787, con=7.1791, intent=4.0812, rec=0.0086, this epoch 8.1325, total 18.4134
+Traceback (most recent call last):
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\train_ig.py", line 443, in <module>
+    z_adv, z_rec, reg, fea_up, fea_lo, alpha = build_views(
+                                               ^^^^^^^^^^^^
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\train_ig.py", line 363, in _build_views_single
+    zr = cont_m(data.x, rei, rew, intent)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\ig_model.py", line 290, in forward
+    return self.encoder(x, edge_index, edge_weight, intent)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\hii_gnn.py", line 170, in forward
+    h = self.global_fusion(h, intent_h)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\hii_gnn.py", line 129, in forward
+    x = self.norm2(x + self.ffn(x))
+                       ^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\container.py", line 250, in forward
+    input = module(input)
+            ^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\linear.py", line 125, in forward
+    return F.linear(input, self.weight, self.bias)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

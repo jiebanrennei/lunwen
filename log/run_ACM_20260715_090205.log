@@ -1,0 +1,24 @@
+[log] 运行日志写入: log\run_ACM_20260715_090205.log
+Using CPU
+Using CPU
+  [sparsify] psp.npz: 4338213 -> 344296 edges (avg_deg 1079 -> 86, top-k=50)
+[data] 多关系 R=2: pap(53834 edges), psp(344296 edges)
+[intent] dynamic query-based, dim=256
+[encoder] MultiRelation+ICRA  R=2 hii_heads=4 icra_heads=4 icra_dim=128
+[ckpt] 从 checkpoints\ckpt_ACM_hii.pt 恢复, 已完成 200 轮, 从第 201 轮继续
+[AC] 训练 Actor-Critic 对抗图生成器 (100 轮)...
+[AC] 开始训练 2026-07-15 09:02:11
+[AC] Epoch=001, avg_return=319.8296, loss=2654.3435, this epoch 8.00s, total 8.00s
+[AC] Epoch=002, avg_return=856.1624, loss=7153.1374, this epoch 22.42s, total 30.42s
+[AC] Epoch=003, avg_return=935.1797, loss=7337.3859, this epoch 21.75s, total 52.17s
+[AC] Epoch=004, avg_return=930.9695, loss=7657.7833, this epoch 23.08s, total 75.25s
+[AC] Epoch=005, avg_return=930.9786, loss=7720.6104, this epoch 21.66s, total 96.91s
+[AC] Epoch=006, avg_return=1317.5043, loss=10682.8833, this epoch 25.79s, total 122.70s
+[AC] Epoch=007, avg_return=1507.9740, loss=11234.4947, this epoch 41.02s, total 163.72s
+[AC] Epoch=008, avg_return=1768.3606, loss=12982.8116, this epoch 52.98s, total 216.69s
+[AC] Epoch=009, avg_return=1823.4661, loss=13562.2001, this epoch 46.49s, total 263.18s
+[AC] Epoch=010, avg_return=1720.4221, loss=11259.6224, this epoch 51.00s, total 314.18s
+[AC] Epoch=011, avg_return=2323.1084, loss=15523.6539, this epoch 72.27s, total 386.45s
+[AC] Epoch=012, avg_return=2713.6795, loss=17198.8428, this epoch 84.73s, total 471.18s
+[AC] Epoch=013, avg_return=2638.4522, loss=17629.6522, this epoch 73.75s, total 544.93s
+[AC] Epoch=014, avg_return=3291.0279, loss=19698.6501, this epoch 117.79s, total 662.72s
