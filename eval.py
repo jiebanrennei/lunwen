@@ -540,14 +540,18 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
 
 
 def community_search_rl(builder, embeddings, data, queries,
-                        node_boost=None, intent=None):
+                        node_boost=None, intent=None, max_sizes=None):
     """
     Actor-Critic 社区搜索评测 (§7.2 Step4)。
     对每个查询, 用训练好的 builder 从查询节点扩展出社区集合, 再与真值标签比对。
     标签仅用于计算 P/R/F1 (评测), 社区生成过程本身自监督、不看标签。
 
+    max_sizes=None: 单 size 评测(用 builder.max_size), 返回扁平 dict。
+    max_sizes=[...]: 一次扫多个 max_size(P-R 曲线), 每个查询只展开一次到最大 cap、
+        前缀切片还原各 size, 返回 {size: dict}。
+
     Returns:
-        dict: {'precision','recall','f1','jaccard','avg_size'}
+        dict: {'precision','recall','f1','jaccard','avg_size'} 或 {size: 同结构}
     """
     y = data.y.detach().cpu().numpy()
     N = embeddings.size(0)
@@ -558,6 +562,46 @@ def community_search_rl(builder, embeddings, data, queries,
         label_sets[label] = set(np.where(y == label)[0].tolist())
 
     queries = np.asarray(queries)
+
+    # ---- 扫多个 max_size: 每个查询只展开一次到最大 cap, 前缀切片还原各 size ----
+    if max_sizes is not None:
+        max_cap = max(max_sizes)
+        orders = {int(q): builder.build_sequence(
+                      embeddings, adj, int(q), intent,
+                      node_boost=node_boost, max_size=max_cap)
+                  for q in queries}
+        sweep = {}
+        for ms in sorted(max_sizes):
+            P, R, Fm, J, sizes = [], [], [], [], []
+            for q in queries:
+                truth = label_sets[y[q]].copy()
+                truth.discard(int(q))
+                if len(truth) == 0:
+                    continue
+                seq = orders[int(q)][:ms]
+                pred = set(seq)
+                pred.discard(int(q))
+                inter = len(pred & truth)
+                union = len(pred | truth)
+                p = inter / len(pred) if len(pred) > 0 else 0.0
+                r = inter / len(truth)
+                f = 2 * p * r / (p + r) if (p + r) > 0 else 0.0
+                j = inter / union if union > 0 else 0.0
+                P.append(p); R.append(r); Fm.append(f); J.append(j)
+                sizes.append(len(seq))
+            res = {
+                'precision': float(np.mean(P)) * 100 if P else 0.0,
+                'recall': float(np.mean(R)) * 100 if R else 0.0,
+                'f1': float(np.mean(Fm)) * 100 if Fm else 0.0,
+                'jaccard': float(np.mean(J)) * 100 if J else 0.0,
+                'avg_size': float(np.mean(sizes)) if sizes else 0.0,
+            }
+            sweep[ms] = res
+            print(f"[CS-rl] max_size={ms:5d}  P={res['precision']:.2f} "
+                  f"R={res['recall']:.2f} F1={res['f1']:.2f} "
+                  f"Jaccard={res['jaccard']:.2f} size={res['avg_size']:.1f}")
+        return sweep
+
     P, R, Fm, J, sizes = [], [], [], [], []
 
     for q in queries:

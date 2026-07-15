@@ -200,6 +200,9 @@ if __name__ == '__main__':
                         help='Actor-Critic 学习率')
     parser.add_argument('--ac_max_size', type=int, default=200,
                         help='Actor-Critic 生成社区的最大规模')
+    parser.add_argument('--ac_size_sweep', type=str, default=None,
+                        help='逗号分隔 max_size 列表(如 200,400,600,800,1000,1200,1400); '
+                             '设置后一次评测扫出整条 P-R 曲线')
     # 断点续训 (checkpoint / resume)
     parser.add_argument('--resume', action='store_true',
                         help='存在检查点则从中断处继续训练')
@@ -648,9 +651,12 @@ if __name__ == '__main__':
     # Actor-Critic 社区搜索评测 (启用时)
     cs_rl = None
     if args.use_actor_critic and builder is not None:
+        sweep_sizes = None
+        if args.ac_size_sweep:
+            sweep_sizes = [int(s) for s in args.ac_size_sweep.split(',')]
         cs_rl = community_search_rl(
             builder, emb, data, fixed_queries,
-            node_boost=node_boost, intent=avg_intent
+            node_boost=node_boost, intent=avg_intent, max_sizes=sweep_sizes
         )
 
     eval_time = t() - eval_start        # 评估(测试)总耗时
@@ -684,10 +690,19 @@ if __name__ == '__main__':
                          f" diam={metrics['diameter']:.2f}")
             f.write(line + '\n')
         if cs_rl is not None:
-            f.write(f"  CS-rl: P={cs_rl['precision']:.2f} "
-                    f"R={cs_rl['recall']:.2f} "
-                    f"F1={cs_rl['f1']:.2f} "
-                    f"Jaccard={cs_rl['jaccard']:.2f} "
-                    f"size={cs_rl['avg_size']:.1f}\n")
+            if 'precision' in cs_rl:                     # 单 size: 扁平 dict
+                f.write(f"  CS-rl: P={cs_rl['precision']:.2f} "
+                        f"R={cs_rl['recall']:.2f} "
+                        f"F1={cs_rl['f1']:.2f} "
+                        f"Jaccard={cs_rl['jaccard']:.2f} "
+                        f"size={cs_rl['avg_size']:.1f}\n")
+            else:                                         # 扫描: {size: dict}
+                for ms in sorted(cs_rl):
+                    m = cs_rl[ms]
+                    f.write(f"  CS-rl@max_size={ms}: P={m['precision']:.2f} "
+                            f"R={m['recall']:.2f} "
+                            f"F1={m['f1']:.2f} "
+                            f"Jaccard={m['jaccard']:.2f} "
+                            f"size={m['avg_size']:.1f}\n")
         f.write(timing_result + '\n')
     print('-----------------')

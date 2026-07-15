@@ -112,6 +112,37 @@ class ActorCriticCommunityBuilder(nn.Module):
             frontier.update(set(adj[node]) - visited)
         return visited
 
+    @torch.no_grad()
+    def build_sequence(self, z, adj, q, intent, node_boost=None, max_size=None):
+        """贪心扩展并返回加入顺序 [q, n1, n2, ...]。
+        贪心序列与 max_size 无关(每步只依赖已选集合与 frontier),
+        故一次展开到最大 cap, 即可用前缀切片还原任意更小 size 的社区,
+        供一次评测扫出整条 P-R 曲线。"""
+        self.eval()
+        cap = max_size if max_size is not None else self.max_size
+        zc = F.normalize(z, dim=-1)
+        z_q = zc[q]
+        q = int(q)
+        visited = {q}
+        order = [q]
+        frontier = set(adj[q]) - visited
+
+        for _ in range(cap - 1):
+            if not frontier:
+                break
+            frontier_list = self._frontier_list(zc, z_q, frontier)
+            dist, _v = self.step_distribution(zc, sorted(visited), frontier_list,
+                                              z_q, intent)
+            action = int(torch.argmax(dist.probs))
+            if action == len(frontier_list):          # STOP
+                break
+            node = frontier_list[action]
+            visited.add(node)
+            order.append(node)
+            frontier.discard(node)
+            frontier.update(set(adj[node]) - visited)
+        return order
+
     def rollout(self, zc, adj, q, intent, node_boost, num_nodes, gamma=0.95):
         """训练用采样轨迹, 返回 (log_probs, values, returns)。
         自监督边际奖励: 加入节点与查询的相似度超过全图均值则为正, 否则为负;

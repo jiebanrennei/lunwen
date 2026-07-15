@@ -1,0 +1,34 @@
+[log] 运行日志写入: log\run_ACM_20260715_140042.log
+Using CPU
+Using CPU
+  [sparsify] psp.npz: 4338213 -> 344296 edges (avg_deg 1079 -> 86, top-k=50)
+[data] 多关系 R=2: pap(53834 edges), psp(344296 edges)
+[intent] dynamic query-based, dim=256
+[encoder] MultiRelation+ICRA  R=2 hii_heads=4 icra_heads=4 icra_dim=128
+[ckpt] 从 checkpoints\ckpt_ACM_hii.pt 恢复, 已完成 200 轮, 从第 201 轮继续
+[AC] 训练 Actor-Critic 对抗图生成器 (100 轮)...
+[AC] 开始训练 2026-07-15 14:00:49
+[AC] Epoch=001, avg_return=319.8296, loss=2654.3435, this epoch 7.45s, total 7.45s
+[AC] Epoch=002, avg_return=801.8297, loss=6703.9462, this epoch 25.44s, total 32.89s
+[AC] Epoch=003, avg_return=922.1133, loss=7248.2724, this epoch 23.82s, total 56.70s
+[AC] Epoch=004, avg_return=817.4099, loss=6567.0358, this epoch 22.51s, total 79.22s
+[AC] Epoch=005, avg_return=931.6861, loss=7580.6477, this epoch 21.94s, total 101.16s
+[AC] Epoch=006, avg_return=962.7751, loss=7863.9086, this epoch 22.93s, total 124.09s
+[AC] Epoch=007, avg_return=1834.1000, loss=13563.4973, this epoch 58.45s, total 182.54s
+[AC] Epoch=008, avg_return=1812.4075, loss=13221.0122, this epoch 55.24s, total 237.78s
+[AC] Epoch=009, avg_return=1463.5106, loss=10321.1532, this epoch 42.08s, total 279.87s
+[AC] Epoch=010, avg_return=1628.2577, loss=10594.0807, this epoch 52.04s, total 331.91s
+[AC] Epoch=011, avg_return=2684.5930, loss=16956.7251, this epoch 105.93s, total 437.84s
+[AC] Epoch=012, avg_return=3169.2795, loss=19803.0115, this epoch 97.38s, total 535.22s
+[AC] Epoch=013, avg_return=3421.5660, loss=21911.7474, this epoch 109.35s, total 644.57s
+[AC] Epoch=014, avg_return=3542.4149, loss=20198.7694, this epoch 149.23s, total 793.80s
+[AC] Epoch=015, avg_return=4235.6935, loss=22663.9172, this epoch 178.76s, total 972.56s
+[AC] Epoch=016, avg_return=3512.5959, loss=19656.1240, this epoch 144.78s, total 1117.34s
+[AC] Epoch=017, avg_return=4264.3150, loss=20336.5783, this epoch 240.23s, total 1357.57s
+[AC] Epoch=018, avg_return=3702.8350, loss=16311.9641, this epoch 176.97s, total 1534.54s
+[AC] Epoch=019, avg_return=5013.8687, loss=23843.2466, this epoch 219.51s, total 1754.05s
+[AC] Epoch=020, avg_return=3974.6697, loss=15539.0344, this epoch 170.37s, total 1924.42s
+[AC] Epoch=021, avg_return=4572.8087, loss=18955.9179, this epoch 197.14s, total 2121.56s
+[AC] Epoch=022, avg_return=4176.4165, loss=14984.5512, this epoch 205.14s, total 2326.70s
+[AC] Epoch=023, avg_return=4753.5242, loss=17636.2292, this epoch 199.19s, total 2525.90s
+[AC] Epoch=024, avg_return=4641.9013, loss=12327.2905, this epoch 214.69s, total 2740.59s
