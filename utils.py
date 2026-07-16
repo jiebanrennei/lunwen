@@ -186,7 +186,7 @@ def _sparsify_topk(adj_sp, k):
 
 
 def get_cs_dataset(root, name, meta_path=None, multi_relation=False,
-                   cs_relations=None, sparsify_topk=None):
+                   cs_relations=None, sparsify_topk=None, cs_full_graph=True):
     """
     Load community-search heterogeneous graph dataset.
 
@@ -200,6 +200,10 @@ def get_cs_dataset(root, name, meta_path=None, multi_relation=False,
                       None 表示用全部 cfg['meta_paths']。
         sparsify_topk: int or None. 非 None 时, 对平均度数超过此值的稠密 meta-path
                        自动做 top-k 稀疏化 (每节点保留 k 个最强邻居)。
+        cs_full_graph: True 时额外构建 data.cs_edge_index —— 全量合并所有
+                       cfg['meta_paths'] (不稀疏化) 的无向图, 专供社区搜索的贪婪/
+                       AC 扩展使用。ACM 的默认 edge_index 只有 PAP, 缺 PSP 主题社区;
+                       cs_edge_index 补齐 PSP 等稠密路径, 让扩展能到达同主题节点。
     Returns:
         list containing one PyG Data object. 多关系模式下 data 额外带有
         edge_index_list / num_relations / relation_names 属性。
@@ -232,6 +236,18 @@ def get_cs_dataset(root, name, meta_path=None, multi_relation=False,
     edge_index = _sparse_to_edge_index(adj)
 
     data = Data(x=x, edge_index=edge_index, y=y)
+
+    if cs_full_graph:
+        # 全量合并所有 meta-path (不稀疏化), 专供社区搜索扩展。
+        cs_adj = None
+        for mp in cfg['meta_paths']:
+            m = sp.load_npz(osp.join(base, mp))
+            m = (m > 0).astype(np.float64)
+            cs_adj = m if cs_adj is None else cs_adj + m
+        cs_adj = _binarize_symmetric(cs_adj)
+        data.cs_edge_index = _sparse_to_edge_index(cs_adj)
+        print(f"  [cs_full_graph] {name}: merged {cfg['meta_paths']} -> "
+              f"{data.cs_edge_index.size(1)} directed edges (no sparsify)")
 
     if multi_relation:
         # 选择参与的 meta-path: cs_relations 优先, 否则全部

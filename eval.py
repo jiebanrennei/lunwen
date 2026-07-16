@@ -297,6 +297,13 @@ def community_search(embeddings, data, topk=(10, 20, 50), num_queries=None, seed
     return results
 
 
+def _cs_edge_index(data):
+    """社区搜索用的邻接来源: 优先全量合并图 cs_edge_index (含 PSP 等稠密路径),
+    退化到 data.edge_index。让贪婪/AC 扩展能走到同主题社区, 而非只走默认稀疏路径。"""
+    return getattr(data, 'cs_edge_index', None) if getattr(
+        data, 'cs_edge_index', None) is not None else data.edge_index
+
+
 def _build_adj_list(edge_index, num_nodes):
     """从 edge_index(评估时为双向边)构建邻接表 list[set[int]],去自环。"""
     adj = [set() for _ in range(num_nodes)]
@@ -469,7 +476,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
     if mult is not None:
         sims = sims * mult[None, :]
 
-    adj = _build_adj_list(data.edge_index, N)
+    adj = _build_adj_list(_cs_edge_index(data), N)
     total_vol = sum(len(a) for a in adj) if compute_structure else 0
 
     label_sets = {}
@@ -540,7 +547,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
 
 
 def community_search_rl(builder, embeddings, data, queries,
-                        node_boost=None, intent=None, max_sizes=None):
+                        node_boost=None, intent=None, max_sizes=None,
+                        oracle_size=False):
     """
     Actor-Critic 社区搜索评测 (§7.2 Step4)。
     对每个查询, 用训练好的 builder 从查询节点扩展出社区集合, 再与真值标签比对。
@@ -555,13 +563,53 @@ def community_search_rl(builder, embeddings, data, queries,
     """
     y = data.y.detach().cpu().numpy()
     N = embeddings.size(0)
-    adj = _build_adj_list(data.edge_index, N)
+    adj = _build_adj_list(_cs_edge_index(data), N)
 
     label_sets = {}
     for label in np.unique(y):
         label_sets[label] = set(np.where(y == label)[0].tolist())
 
     queries = np.asarray(queries)
+
+    def _oracle_eval():
+        """oracle-size 对照线: 每个查询扩展到其真值社区大小 |truth| 并截断。
+        隔离 '排序质量'(embedding 能否把同社区节点排前) 与 '停止准则'
+        (贪婪/AC 何时停)。oracle F1 高而实际 F1 低 => 瓶颈在扩展/停止, 非表示。"""
+        caps = {int(q): len(label_sets[y[q]]) for q in queries}
+        global_cap = max(caps.values()) if caps else 0
+        orders_o = {int(q): builder.build_sequence(
+                        embeddings, adj, int(q), intent,
+                        node_boost=node_boost, max_size=global_cap)
+                    for q in queries}
+        P, R, Fm, J, sizes = [], [], [], [], []
+        for q in queries:
+            truth = label_sets[y[q]].copy()
+            truth.discard(int(q))
+            if len(truth) == 0:
+                continue
+            # 序列首元素为 q; 取 |truth|+1 个 => 去掉 q 后恰好 |truth| 个候选
+            seq = orders_o[int(q)][:len(truth) + 1]
+            pred = set(seq)
+            pred.discard(int(q))
+            inter = len(pred & truth)
+            union = len(pred | truth)
+            p = inter / len(pred) if len(pred) > 0 else 0.0
+            r = inter / len(truth)
+            f = 2 * p * r / (p + r) if (p + r) > 0 else 0.0
+            j = inter / union if union > 0 else 0.0
+            P.append(p); R.append(r); Fm.append(f); J.append(j)
+            sizes.append(len(pred))
+        res = {
+            'precision': float(np.mean(P)) * 100 if P else 0.0,
+            'recall': float(np.mean(R)) * 100 if R else 0.0,
+            'f1': float(np.mean(Fm)) * 100 if Fm else 0.0,
+            'jaccard': float(np.mean(J)) * 100 if J else 0.0,
+            'avg_size': float(np.mean(sizes)) if sizes else 0.0,
+        }
+        print(f"[CS-rl] oracle-size  P={res['precision']:.2f} "
+              f"R={res['recall']:.2f} F1={res['f1']:.2f} "
+              f"Jaccard={res['jaccard']:.2f} size={res['avg_size']:.1f}")
+        return res
 
     # ---- 扫多个 max_size: 每个查询只展开一次到最大 cap, 前缀切片还原各 size ----
     if max_sizes is not None:
@@ -600,6 +648,8 @@ def community_search_rl(builder, embeddings, data, queries,
             print(f"[CS-rl] max_size={ms:5d}  P={res['precision']:.2f} "
                   f"R={res['recall']:.2f} F1={res['f1']:.2f} "
                   f"Jaccard={res['jaccard']:.2f} size={res['avg_size']:.1f}")
+        if oracle_size:
+            sweep['oracle'] = _oracle_eval()
         return sweep
 
     P, R, Fm, J, sizes = [], [], [], [], []
@@ -635,6 +685,8 @@ def community_search_rl(builder, embeddings, data, queries,
           f"F1={results['f1']:.2f} "
           f"Jaccard={results['jaccard']:.2f} "
           f"size={results['avg_size']:.1f}")
+    if oracle_size:
+        results['oracle'] = _oracle_eval()
     return results
 
 
@@ -737,7 +789,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
         rng_np = np.random.default_rng(seed)
         queries = rng_np.choice(N, size=num_queries, replace=False)
 
-    adj = _build_adj_list(data.edge_index, N)
+    adj = _build_adj_list(_cs_edge_index(data), N)
 
     label_sets = {}
     for label in np.unique(y):

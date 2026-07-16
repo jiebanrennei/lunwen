@@ -210,3 +210,48 @@ micro_f1: 89.91±0.53, macro_f1: 89.85±0.56, acc: 89.91±0.53
 [timing] 训练时间=30319.78s, 测试时间=13339.20s, 总运行时间=13340.21s (每轮均值=151.599s)
 ########################################
 {'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 1400, 'ac_size_sweep': '200,400,600,800,1000,1200,1400', 'resume': True, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 1400, 'ac_size_sweep': '200,400,600,800,1000,1200,1400', 'resume': True, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50, 'cs_full_graph': True}
+epoch: 200
+micro_f1: 89.84±0.67, macro_f1: 89.74±0.72, acc: 89.84±0.67
+  CS@10: P=80.75 R=0.66 F1=1.31 Jaccard=0.66
+  CS@20: P=80.12 R=1.31 F1=2.57 Jaccard=1.31
+  CS@50: P=79.80 R=3.27 F1=6.26 Jaccard=3.26
+  CS@oracle: P=73.75 R=73.75 F1=73.75 Jaccard=61.71
+  CS-greedy@w=0.0: P=60.37 R=48.45 F1=48.28 Jaccard=36.77 size=1076.8
+  CS-greedy@w=0.1: P=62.53 R=47.31 F1=48.60 Jaccard=37.09 size=1016.1
+  CS-greedy@w=0.2: P=64.03 R=45.98 F1=48.56 Jaccard=36.99 size=959.5
+  CS-greedy@w=0.3: P=65.73 R=44.38 F1=48.35 Jaccard=36.71 size=897.4
+  CS-greedy@w=0.5: P=69.87 R=35.78 F1=41.74 Jaccard=31.09 size=675.1
+  CS-rl@max_size=200: P=55.70 R=7.42 F1=12.64 Jaccard=7.30 size=150.4
+  CS-rl@max_size=400: P=59.04 R=15.58 F1=23.23 Jaccard=15.06 size=300.4
+  CS-rl@max_size=600: P=61.22 R=23.95 F1=31.93 Jaccard=21.76 size=450.4
+  CS-rl@max_size=800: P=59.18 R=29.78 F1=36.19 Jaccard=24.82 size=600.4
+  CS-rl@max_size=1000: P=57.12 R=34.87 F1=39.04 Jaccard=27.27 size=750.4
+  CS-rl@max_size=1200: P=54.93 R=39.11 F1=40.71 Jaccard=28.90 size=900.4
+  CS-rl@max_size=1400: P=52.70 R=42.59 F1=41.50 Jaccard=29.84 size=1050.4
+[timing] 训练时间=30319.78s, 测试时间=26797.17s, 总运行时间=26797.91s (每轮均值=151.599s)
+epoch: 200
+micro_f1: 89.93±0.44, macro_f1: 89.86±0.45, acc: 89.93±0.44
+  CS@10: P=80.75 R=0.66 F1=1.31 Jaccard=0.66
+  CS@20: P=80.12 R=1.31 F1=2.57 Jaccard=1.31
+  CS@50: P=79.80 R=3.27 F1=6.26 Jaccard=3.26
+  CS@oracle: P=73.75 R=73.75 F1=73.75 Jaccard=61.71
+  CS-greedy@w=0.0: P=61.48 R=90.32 F1=71.71 Jaccard=57.23 size=1935.9
+  CS-greedy@w=0.1: P=63.93 R=88.60 F1=72.79 Jaccard=58.72 size=1829.5
+  CS-greedy@w=0.2: P=66.46 R=86.48 F1=73.68 Jaccard=60.00 size=1719.3
+  CS-greedy@w=0.3: P=69.07 R=83.78 F1=74.23 Jaccard=60.91 size=1602.0
+  CS-greedy@w=0.5: P=73.82 R=75.38 F1=73.11 Jaccard=60.03 size=1336.0
+  CS-greedy@w=0.7: P=70.46 R=54.43 F1=60.02 Jaccard=47.69 size=887.9
+  CS-greedy@w=1.0: P=0.00 R=0.00 F1=0.00 Jaccard=0.00 size=1.0
+  CS-greedy@w=1.5: P=0.00 R=0.00 F1=0.00 Jaccard=0.00 size=1.0
+  CS-greedy@w=2.0: P=0.00 R=0.00 F1=0.00 Jaccard=0.00 size=1.0
+  CS-rl@max_size=200: P=82.31 R=13.62 F1=23.13 Jaccard=13.45 size=200.0
+  CS-rl@max_size=400: P=82.95 R=27.49 F1=40.63 Jaccard=26.85 size=400.0
+  CS-rl@max_size=600: P=82.34 R=40.91 F1=53.59 Jaccard=39.13 size=600.0
+  CS-rl@max_size=800: P=80.54 R=53.13 F1=62.63 Jaccard=49.23 size=800.0
+  CS-rl@max_size=1000: P=77.04 R=62.98 F1=67.69 Jaccard=54.60 size=1000.0
+  CS-rl@max_size=1200: P=72.36 R=70.08 F1=69.46 Jaccard=55.73 size=1200.0
+  CS-rl@max_size=1400: P=67.92 R=75.77 F1=69.82 Jaccard=55.46 size=1400.0
+  CS-rl@oracle-size: P=74.39 R=74.39 F1=74.39 Jaccard=62.19 size=1331.7
+[timing] 训练时间=30319.78s, 测试时间=43802.11s, 总运行时间=43803.04s (每轮均值=151.599s)

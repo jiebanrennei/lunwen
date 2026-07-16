@@ -39,7 +39,8 @@ from edge_importance import SuspiciousNodeIdentifier
 from ig_model import IntentGuidedAdversarialModel, IntentContrastiveModel, QueryIntentGenerator
 from eval import (label_classification, community_search, community_search_greedy,
                   community_search_dynamic, community_search_greedy_dynamic,
-                  community_search_rl, build_fixed_queries, _build_adj_list)
+                  community_search_rl, build_fixed_queries, _build_adj_list,
+                  _cs_edge_index)
 from actor_critic import ActorCriticCommunityBuilder, train_actor_critic
 
 torch.use_deterministic_algorithms(True)
@@ -222,6 +223,12 @@ if __name__ == '__main__':
     parser.add_argument('--sparsify_topk', type=int, default=None,
                         help='稠密 meta-path top-k 稀疏化(每节点保留k个最强邻居); '
                              'None=不稀疏。ACM-PSP/DBLP-APCPA 等超稠密关系必需(否则OOM)')
+    parser.add_argument('--cs_full_graph', action='store_true', default=True,
+                        help='社区搜索在全量合并 meta-path 图上扩展(补齐 PSP 等稠密'
+                             '主题社区); 默认开。编码器仍用稀疏图, 互不影响')
+    parser.add_argument('--no_cs_full_graph', dest='cs_full_graph',
+                        action='store_false',
+                        help='关闭全量图, CS 退回默认稀疏 edge_index(旧行为)')
     args = parser.parse_args()
 
     # ========== 运行日志: 全部 print/stderr 同时写入文件 (tee) ==========
@@ -256,7 +263,8 @@ if __name__ == '__main__':
                                  meta_path=args.meta_path,
                                  multi_relation=(args.encoder == 'hii'),
                                  cs_relations=cs_rel_list,
-                                 sparsify_topk=args.sparsify_topk)
+                                 sparsify_topk=args.sparsify_topk,
+                                 cs_full_graph=args.cs_full_graph)
     else:
         dataset = get_dataset('./datasets/', args.dataset)
     data = dataset[0]
@@ -586,7 +594,8 @@ if __name__ == '__main__':
     # 主编码器收敛后单独训练, 用冻结的 emb; 不动上面的 Min-Max 主循环。
     builder = None
     if args.use_actor_critic:
-        ac_adj = _build_adj_list(data.edge_index, data.x.size(0))
+        # AC 训练与评测用同一张图(全量合并 meta-path), 避免 train/eval 图不一致
+        ac_adj = _build_adj_list(_cs_edge_index(data), data.x.size(0))
         builder = ActorCriticCommunityBuilder(
             emb.size(1), avg_intent.size(0), max_size=args.ac_max_size
         ).to(device)
@@ -631,7 +640,7 @@ if __name__ == '__main__':
         )
         cs_greedy = community_search_greedy_dynamic(
             contrastive_model, intent_generator, data, ew_arg,
-            w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
+            w_list=(0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0),
             num_queries=args.cs_num_queries, seed=args.seed,
             node_boost=node_boost, boost_factor=args.suspicious_boost,
             queries=fixed_queries, edge_index=ei_arg
@@ -642,7 +651,8 @@ if __name__ == '__main__':
                                       boost_factor=args.suspicious_boost,
                                       queries=fixed_queries)
         cs_greedy = community_search_greedy(emb, data,
-                                            w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
+                                            w_list=(0.0, 0.1, 0.2, 0.3, 0.5,
+                                                    0.7, 1.0, 1.5, 2.0),
                                             seed=args.seed,
                                             node_boost=node_boost,
                                             boost_factor=args.suspicious_boost,
@@ -656,7 +666,8 @@ if __name__ == '__main__':
             sweep_sizes = [int(s) for s in args.ac_size_sweep.split(',')]
         cs_rl = community_search_rl(
             builder, emb, data, fixed_queries,
-            node_boost=node_boost, intent=avg_intent, max_sizes=sweep_sizes
+            node_boost=node_boost, intent=avg_intent, max_sizes=sweep_sizes,
+            oracle_size=True
         )
 
     eval_time = t() - eval_start        # 评估(测试)总耗时
@@ -690,6 +701,7 @@ if __name__ == '__main__':
                          f" diam={metrics['diameter']:.2f}")
             f.write(line + '\n')
         if cs_rl is not None:
+            oracle_m = cs_rl.pop('oracle', None)          # oracle-size 对照线
             if 'precision' in cs_rl:                     # 单 size: 扁平 dict
                 f.write(f"  CS-rl: P={cs_rl['precision']:.2f} "
                         f"R={cs_rl['recall']:.2f} "
@@ -704,5 +716,11 @@ if __name__ == '__main__':
                             f"F1={m['f1']:.2f} "
                             f"Jaccard={m['jaccard']:.2f} "
                             f"size={m['avg_size']:.1f}\n")
+            if oracle_m is not None:
+                f.write(f"  CS-rl@oracle-size: P={oracle_m['precision']:.2f} "
+                        f"R={oracle_m['recall']:.2f} "
+                        f"F1={oracle_m['f1']:.2f} "
+                        f"Jaccard={oracle_m['jaccard']:.2f} "
+                        f"size={oracle_m['avg_size']:.1f}\n")
         f.write(timing_result + '\n')
     print('-----------------')
