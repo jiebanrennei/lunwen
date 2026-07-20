@@ -693,7 +693,8 @@ def community_search_rl(builder, embeddings, data, queries,
 def community_search_dynamic(encoder_fn, intent_generator, data, edge_weight,
                               topk=(10, 20, 50, 'oracle'), num_queries=200, seed=0,
                               node_boost=None, boost_factor=1.5, queries=None,
-                              edge_index=None):
+                              edge_index=None,
+                              intent_proj_fn=None, intent_rerank_alpha=0.0):
     """
     动态意图社区搜索: 每个查询节点根据自己的特征生成意图,
     用该意图重新编码全图, 再按余弦相似度排序。
@@ -731,6 +732,11 @@ def community_search_dynamic(encoder_fn, intent_generator, data, edge_weight,
             emb = encoder_fn(data.x, ei, edge_weight, intent)
             emb_norm = F.normalize(emb, dim=-1)
             sims_q = (emb_norm[q] @ emb_norm.t()).cpu().numpy()
+            if intent_rerank_alpha > 0 and intent_proj_fn is not None:
+                z_proj = F.normalize(intent_proj_fn(emb), dim=-1)
+                iq_norm = F.normalize(intent.unsqueeze(0), dim=-1)
+                intent_align = (z_proj @ iq_norm.t()).squeeze(-1).cpu().numpy()
+                sims_q = sims_q + intent_rerank_alpha * intent_align
 
         if mult is not None:
             sims_q = sims_q * mult
@@ -773,7 +779,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                                      num_queries=200, seed=0, max_iter=10000,
                                      node_boost=None, boost_factor=1.5, queries=None,
-                                     edge_index=None):
+                                     edge_index=None,
+                                     intent_proj_fn=None, intent_rerank_alpha=0.0):
     """
     动态意图 + 贪心扩展社区搜索。
     每个查询节点生成意图→重新编码→贪心扩展。
@@ -811,6 +818,11 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             emb = encoder_fn(data.x, ei, edge_weight, intent)
             emb_norm = F.normalize(emb, dim=-1)
             sims_q = (emb_norm[q] @ emb_norm.t()).cpu().numpy()
+            if intent_rerank_alpha > 0 and intent_proj_fn is not None:
+                z_proj = F.normalize(intent_proj_fn(emb), dim=-1)
+                iq_norm = F.normalize(intent.unsqueeze(0), dim=-1)
+                intent_align = (z_proj @ iq_norm.t()).squeeze(-1).cpu().numpy()
+                sims_q = sims_q + intent_rerank_alpha * intent_align
 
         if mult is not None:
             sims_q = sims_q * mult

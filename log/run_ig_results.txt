@@ -255,3 +255,119 @@ micro_f1: 89.93±0.44, macro_f1: 89.86±0.45, acc: 89.93±0.44
   CS-rl@max_size=1400: P=67.92 R=75.77 F1=69.82 Jaccard=55.46 size=1400.0
   CS-rl@oracle-size: P=74.39 R=74.39 F1=74.39 Jaccard=62.19 size=1331.7
 [timing] 训练时间=30319.78s, 测试时间=43802.11s, 总运行时间=43803.04s (每轮均值=151.599s)
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 1400, 'ac_size_sweep': '200,400,600,800,1000,1200,1400', 'resume': False, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50, 'cs_full_graph': True, 'lambda_igqc': 0.5, 'igqc_pos': 20, 'igqc_neg': 512, 'igqc_num_queries': 8, 'igqc_intent_gate': True}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 1400, 'ac_size_sweep': '200,400,600,800,1000,1200,1400', 'resume': True, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50, 'cs_full_graph': True, 'lambda_igqc': 0.5, 'igqc_pos': 20, 'igqc_neg': 512, 'igqc_num_queries': 8, 'igqc_intent_gate': True}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 1400, 'ac_size_sweep': '200,400,600,800,1000,1200,1400', 'resume': True, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50, 'cs_full_graph': True, 'lambda_igqc': 0.5, 'igqc_pos': 20, 'igqc_neg': 512, 'igqc_num_queries': 8, 'igqc_intent_gate': True}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 1400, 'ac_size_sweep': '200,400,600,800,1000,1200,1400', 'resume': True, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50, 'cs_full_graph': True, 'lambda_igqc': 0.5, 'igqc_pos': 20, 'igqc_neg': 512, 'igqc_num_queries': 8, 'igqc_intent_gate': True}
+epoch: 200
+micro_f1: 90.12±0.53, macro_f1: 89.98±0.53, acc: 90.12±0.53
+  CS@10: P=79.50 R=0.65 F1=1.29 Jaccard=0.65
+  CS@20: P=78.50 R=1.29 F1=2.54 Jaccard=1.29
+  CS@50: P=79.25 R=3.27 F1=6.26 Jaccard=3.25
+  CS@oracle: P=69.72 R=69.72 F1=69.72 Jaccard=58.08
+  CS-greedy@w=0.0: P=57.09 R=90.65 F1=68.63 Jaccard=54.56 size=2216.4
+  CS-greedy@w=0.1: P=59.42 R=89.24 F1=69.70 Jaccard=56.26 size=2125.2
+  CS-greedy@w=0.2: P=61.44 R=87.37 F1=70.33 Jaccard=57.35 size=2028.2
+  CS-greedy@w=0.3: P=63.27 R=84.98 F1=70.62 Jaccard=57.97 size=1918.7
+  CS-greedy@w=0.5: P=66.81 R=78.28 F1=70.11 Jaccard=57.70 size=1651.9
+  CS-greedy@w=0.7: P=70.17 R=64.22 F1=64.30 Jaccard=52.66 size=1200.8
+  CS-greedy@w=1.0: P=5.00 R=0.01 F1=0.01 Jaccard=0.01 size=1.1
+  CS-greedy@w=1.5: P=0.00 R=0.00 F1=0.00 Jaccard=0.00 size=1.0
+  CS-greedy@w=2.0: P=0.00 R=0.00 F1=0.00 Jaccard=0.00 size=1.0
+  CS-rl@max_size=200: P=77.10 R=12.71 F1=21.59 Jaccard=12.49 size=200.0
+  CS-rl@max_size=400: P=76.64 R=25.30 F1=37.41 Jaccard=24.43 size=400.0
+  CS-rl@max_size=600: P=75.73 R=37.56 F1=49.21 Jaccard=35.61 size=600.0
+  CS-rl@max_size=800: P=74.51 R=49.26 F1=58.00 Jaccard=45.65 size=800.0
+  CS-rl@max_size=1000: P=71.46 R=58.66 F1=62.91 Jaccard=50.84 size=1000.0
+  CS-rl@max_size=1200: P=66.33 R=64.42 F1=63.75 Jaccard=50.15 size=1200.0
+  CS-rl@max_size=1400: P=62.02 R=69.37 F1=63.83 Jaccard=49.07 size=1400.0
+  CS-rl@oracle-size: P=69.17 R=69.17 F1=69.17 Jaccard=57.34 size=1331.7
+[timing] 训练时间=31103.48s, 测试时间=34692.02s, 总运行时间=46341.58s (每轮均值=155.517s)
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'random', 'intent_num_queries': 100, 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'gcn', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': False, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 200, 'ac_size_sweep': None, 'resume': False, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': None, 'cs_full_graph': True, 'lambda_igqc': 0.5, 'igqc_pos': 20, 'igqc_neg': 512, 'igqc_num_queries': 8, 'igqc_intent_gate': True}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 1024, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'gcn', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': False, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 200, 'ac_size_sweep': None, 'resume': False, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': None, 'cs_full_graph': True, 'lambda_igqc': 0.5, 'igqc_pos': 20, 'igqc_neg': 512, 'igqc_num_queries': 8, 'igqc_intent_gate': True}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 1400, 'ac_size_sweep': '200,400,600,800,1000,1200,1400', 'resume': False, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50, 'cs_full_graph': True, 'lambda_igqc': 0.5, 'igqc_pos': 20, 'igqc_neg': 512, 'igqc_num_queries': 8, 'igqc_intent_gate': True}
+epoch: 200
+micro_f1: 89.19±0.51, macro_f1: 89.03±0.58, acc: 89.19±0.51
+  CS@10: P=72.00 R=0.57 F1=1.13 Jaccard=0.57
+  CS@20: P=73.38 R=1.17 F1=2.30 Jaccard=1.17
+  CS@50: P=76.25 R=3.08 F1=5.90 Jaccard=3.06
+  CS@oracle: P=70.98 R=70.98 F1=70.98 Jaccard=60.56
+  CS-greedy@w=0.0: P=58.55 R=89.55 F1=69.55 Jaccard=55.81 size=2096.1
+  CS-greedy@w=0.1: P=60.29 R=88.43 F1=70.37 Jaccard=57.12 size=2020.3
+  CS-greedy@w=0.2: P=62.11 R=87.05 F1=71.09 Jaccard=58.29 size=1936.7
+  CS-greedy@w=0.3: P=64.13 R=85.36 F1=71.73 Jaccard=59.39 size=1842.5
+  CS-greedy@w=0.5: P=68.24 R=80.07 F1=72.04 Jaccard=60.38 size=1612.7
+  CS-greedy@w=0.7: P=67.14 R=64.56 F1=64.43 Jaccard=54.32 size=1151.5
+  CS-greedy@w=1.0: P=4.17 R=0.01 F1=0.03 Jaccard=0.01 size=1.2
+  CS-greedy@w=1.5: P=0.00 R=0.00 F1=0.00 Jaccard=0.00 size=1.0
+  CS-greedy@w=2.0: P=0.00 R=0.00 F1=0.00 Jaccard=0.00 size=1.0
+  CS-rl@max_size=200: P=79.07 R=12.99 F1=22.07 Jaccard=12.82 size=200.0
+  CS-rl@max_size=400: P=78.26 R=25.71 F1=38.05 Jaccard=25.05 size=400.0
+  CS-rl@max_size=600: P=77.47 R=38.17 F1=50.08 Jaccard=36.61 size=600.0
+  CS-rl@max_size=800: P=76.04 R=49.89 F1=58.86 Jaccard=46.61 size=800.0
+  CS-rl@max_size=1000: P=73.40 R=59.87 F1=64.34 Jaccard=53.18 size=1000.0
+  CS-rl@max_size=1200: P=68.00 R=65.47 F1=64.99 Jaccard=52.23 size=1200.0
+  CS-rl@max_size=1400: P=63.38 R=70.22 F1=64.87 Jaccard=50.84 size=1400.0
+  CS-rl@oracle-size: P=70.09 R=70.09 F1=70.09 Jaccard=59.42 size=1331.7
+[timing] 训练时间=26687.41s, 测试时间=27857.39s, 总运行时间=54545.59s (每轮均值=133.437s)
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 1400, 'ac_size_sweep': '200,400,600,800,1000,1200,1400', 'resume': False, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50, 'cs_full_graph': True, 'lambda_igqc': 0.1, 'igqc_pos': 20, 'igqc_neg': 512, 'igqc_num_queries': 8, 'igqc_intent_gate': True}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 1400, 'ac_size_sweep': '200,400,600,800,1000,1200,1400', 'resume': False, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50, 'cs_full_graph': True, 'lambda_igqc': 0.1, 'igqc_pos': 20, 'igqc_neg': 512, 'igqc_num_queries': 8, 'igqc_intent_gate': True}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 1400, 'ac_size_sweep': '200,400,600,800,1000,1200,1400', 'resume': False, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50, 'cs_full_graph': True, 'lambda_igqc': 0.1, 'igqc_pos': 20, 'igqc_neg': 512, 'igqc_num_queries': 8, 'igqc_intent_gate': True}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 1400, 'ac_size_sweep': '200,400,600,800,1000,1200,1400', 'resume': False, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50, 'cs_full_graph': True, 'lambda_igqc': 0.1, 'igqc_pos': 20, 'igqc_neg': 512, 'igqc_num_queries': 8, 'igqc_intent_gate': True}
+########################################
+{'dataset': 'ACM', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 1024, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 1.0, 'intent_dim': 256, 'lambda_intent': 0.3, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': True, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 1400, 'ac_size_sweep': '200,400,600,800,1000,1200,1400', 'resume': False, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': 50, 'cs_full_graph': True, 'lambda_igqc': 0.1, 'igqc_pos': 20, 'igqc_neg': 512, 'igqc_num_queries': 8, 'igqc_intent_gate': True}
+epoch: 200
+micro_f1: 91.09±0.73, macro_f1: 90.99±0.83, acc: 91.09±0.73
+  CS@10: P=80.50 R=0.66 F1=1.31 Jaccard=0.66
+  CS@20: P=81.12 R=1.34 F1=2.62 Jaccard=1.33
+  CS@50: P=81.00 R=3.32 F1=6.37 Jaccard=3.31
+  CS@oracle: P=73.00 R=73.00 F1=73.00 Jaccard=62.48
+  CS-greedy@w=0.0: P=58.84 R=91.60 F1=70.34 Jaccard=56.61 size=2134.2
+  CS-greedy@w=0.1: P=60.97 R=90.27 F1=71.40 Jaccard=58.26 size=2042.4
+  CS-greedy@w=0.2: P=63.23 R=88.62 F1=72.38 Jaccard=59.83 size=1943.7
+  CS-greedy@w=0.3: P=65.49 R=86.45 F1=73.10 Jaccard=61.08 size=1835.2
+  CS-greedy@w=0.5: P=70.23 R=80.16 F1=73.65 Jaccard=62.27 size=1572.4
+  CS-greedy@w=0.7: P=71.38 R=62.29 F1=65.72 Jaccard=55.05 size=1084.5
+  CS-greedy@w=1.0: P=0.00 R=0.00 F1=0.00 Jaccard=0.00 size=1.0
+  CS-greedy@w=1.5: P=0.00 R=0.00 F1=0.00 Jaccard=0.00 size=1.0
+  CS-greedy@w=2.0: P=0.00 R=0.00 F1=0.00 Jaccard=0.00 size=1.0
+  CS-rl@max_size=200: P=81.48 R=13.36 F1=22.71 Jaccard=13.21 size=200.0
+  CS-rl@max_size=400: P=80.39 R=26.32 F1=38.98 Jaccard=25.64 size=400.0
+  CS-rl@max_size=600: P=79.49 R=38.94 F1=51.18 Jaccard=37.33 size=600.0
+  CS-rl@max_size=800: P=78.31 R=51.04 F1=60.36 Jaccard=47.88 size=800.0
+  CS-rl@max_size=1000: P=75.14 R=60.68 F1=65.46 Jaccard=53.66 size=1000.0
+  CS-rl@max_size=1200: P=70.12 R=66.83 F1=66.64 Jaccard=53.51 size=1200.0
+  CS-rl@max_size=1400: P=65.74 R=72.03 F1=66.89 Jaccard=52.83 size=1400.0
+  CS-rl@oracle-size: P=72.24 R=72.24 F1=72.24 Jaccard=61.73 size=1331.7
+[timing] 训练时间=23301.90s, 测试时间=25564.78s, 总运行时间=48868.65s (每轮均值=116.509s)
+########################################
+{'dataset': 'IMDB_NEW', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 256, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 5, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 0.0, 'intent_dim': 256, 'lambda_intent': 0.1, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': False, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 200, 'ac_size_sweep': None, 'resume': False, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': None, 'cs_full_graph': True, 'lambda_igqc': 0.0, 'igqc_pos': 20, 'igqc_neg': 512, 'igqc_num_queries': 8, 'igqc_intent_gate': True, 'intent_rerank_alpha': 0.0}
+epoch: 5
+micro_f1: 89.57±0.95, macro_f1: 89.55±0.96, acc: 89.57±0.95
+  CS@10: P=75.25 R=0.50 F1=1.00 Jaccard=0.50
+  CS@20: P=71.88 R=0.96 F1=1.89 Jaccard=0.96
+  CS@50: P=68.70 R=2.29 F1=4.44 Jaccard=2.27
+  CS@oracle: P=49.86 R=49.86 F1=49.86 Jaccard=34.08
+  CS-greedy@w=0.0: P=44.34 R=66.17 F1=53.09 Jaccard=36.71 size=2241.6
+  CS-greedy@w=0.1: P=45.44 R=63.21 F1=52.85 Jaccard=36.56 size=2090.1
+  CS-greedy@w=0.2: P=45.26 R=57.86 F1=50.76 Jaccard=35.03 size=1872.6
+  CS-greedy@w=0.3: P=44.63 R=50.91 F1=47.52 Jaccard=32.76 size=1583.3
+  CS-greedy@w=0.5: P=30.44 R=18.26 F1=20.31 Jaccard=13.96 size=475.8
+  CS-greedy@w=0.7: P=16.88 R=0.04 F1=0.09 Jaccard=0.04 size=1.7
+  CS-greedy@w=1.0: P=0.00 R=0.00 F1=0.00 Jaccard=0.00 size=1.0
+  CS-greedy@w=1.5: P=0.00 R=0.00 F1=0.00 Jaccard=0.00 size=1.0
+  CS-greedy@w=2.0: P=0.00 R=0.00 F1=0.00 Jaccard=0.00 size=1.0
+[timing] 训练时间=333.63s, 测试时间=272.46s, 总运行时间=606.46s (每轮均值=66.726s)
+########################################
+{'dataset': 'IMDB_NEW', 'seed': 123, 'learning_rate_train': 0.001, 'learning_rate_adv': 0.0005, 'num_hidden': 256, 'num_proj_hidden': 256, 'num_edge_hidden': 64, 'activation': 'prelu', 'base_model': 'GCNConv', 'num_layers': 2, 'tau': 0.4, 'num_epochs': 200, 'wd_train': 1e-05, 'wd_adv': 1e-05, 'reg_lambda': 0.5, 'adv_lambda': 0.0, 'intent_dim': 256, 'lambda_intent': 0.1, 'intent_source': 'dynamic', 'intent_num_queries': 100, 'query': '找出在社交网络上通过隐蔽连接协同的群体', 'adv_temp': 1.0, 'bias': 0.0001, 'meta_path': None, 'num_cand_per_node': 5, 'cand_refresh_interval': 20, 'encoder': 'hii', 'hii_heads': 4, 'lambda_rec': 0.1, 'top_k_suspicious': 50, 'suspicious_boost': 1.5, 'cs_num_queries': 40, 'query_file': None, 'use_actor_critic': False, 'ac_epochs': 100, 'ac_lr': 0.001, 'ac_max_size': 200, 'ac_size_sweep': None, 'resume': False, 'ckpt_path': None, 'ckpt_interval': 1, 'icra_heads': 4, 'icra_dim': 128, 'cs_relations': None, 'lambda_rel_entropy': 0.0, 'sparsify_topk': None, 'cs_full_graph': True, 'lambda_igqc': 0.0, 'igqc_pos': 20, 'igqc_neg': 512, 'igqc_num_queries': 8, 'igqc_intent_gate': True, 'intent_rerank_alpha': 0.0}

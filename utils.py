@@ -137,6 +137,12 @@ CS_DATASETS = {
         # both are sparse enough to merge.
         'default': ['mam.npz', 'mdm.npz'],
     },
+    'IMDB_NEW': {
+        'dir': 'imdb_new',
+        'feat': 'm_feat.npz',
+        'meta_paths': ['mam.npz', 'mdm.npz'],
+        'default': ['mam.npz', 'mdm.npz'],
+    },
 }
 
 

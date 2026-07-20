@@ -1,0 +1,130 @@
+[log] 运行日志写入: log\run_ACM_20260716_095533.log
+Using CPU
+Using CPU
+  [cs_full_graph] ACM: merged ['pap.npz', 'psp.npz'] -> 4359766 directed edges (no sparsify)
+  [sparsify] psp.npz: 4338213 -> 344296 edges (avg_deg 1079 -> 86, top-k=50)
+[data] 多关系 R=2: pap(53834 edges), psp(344296 edges)
+[intent] dynamic query-based, dim=256
+[encoder] MultiRelation+ICRA  R=2 hii_heads=4 icra_heads=4 icra_dim=128
+[IGQC] 全量图邻接表就绪, lambda=0.5, pos=20 neg=512 B=8 gate=True
+(T) | Epoch=001, loss=13.9193, con=8.2104, intent=4.9814, rec=0.0015, igqc=6.2324, this epoch 182.3912, total 188.1242  alpha=[pap:0.490, psp:0.510]
+(T) | Epoch=002, loss=13.0493, con=8.5617, intent=3.6834, rec=0.0018, igqc=6.2208, this epoch 173.9318, total 362.0561
+(T) | Epoch=003, loss=12.4813, con=8.3833, intent=3.0252, rec=0.0013, igqc=6.2418, this epoch 164.7047, total 526.7608
+(T) | Epoch=004, loss=12.3045, con=8.3478, intent=2.7273, rec=0.0026, igqc=6.2383, this epoch 170.9826, total 697.7434
+(T) | Epoch=005, loss=12.1340, con=8.2306, intent=2.6043, rec=0.0028, igqc=6.2302, this epoch 188.0923, total 885.8357
+(T) | Epoch=006, loss=11.9757, con=8.0633, intent=2.5883, rec=0.0046, igqc=6.2357, this epoch 163.1740, total 1049.0097
+(T) | Epoch=007, loss=11.7171, con=7.7955, intent=2.6034, rec=0.0059, igqc=6.2166, this epoch 176.2539, total 1225.2636
+(T) | Epoch=008, loss=11.6428, con=7.7007, intent=2.6112, rec=0.0088, igqc=6.2300, this epoch 168.8075, total 1394.0712
+(T) | Epoch=009, loss=11.6896, con=7.7195, intent=2.6230, rec=0.0113, igqc=6.2363, this epoch 183.4828, total 1577.5539
+(T) | Epoch=010, loss=11.6441, con=7.6658, intent=2.5932, rec=0.0139, igqc=6.2329, this epoch 185.0183, total 1762.5722  alpha=[pap:0.598, psp:0.402]
+(T) | Epoch=011, loss=11.5133, con=7.5213, intent=2.5905, rec=0.0144, igqc=6.2266, this epoch 168.3682, total 1930.9404
+(T) | Epoch=012, loss=11.5003, con=7.4840, intent=2.6072, rec=0.0142, igqc=6.2379, this epoch 172.3763, total 2103.3168
+(T) | Epoch=013, loss=11.3430, con=7.3647, intent=2.5930, rec=0.0138, igqc=6.1480, this epoch 169.0886, total 2272.4054
+(T) | Epoch=014, loss=11.4428, con=7.4232, intent=2.5641, rec=0.0142, igqc=6.2313, this epoch 161.1864, total 2433.5918
+(T) | Epoch=015, loss=11.3894, con=7.3898, intent=2.5435, rec=0.0142, igqc=6.1893, this epoch 157.5839, total 2591.1757
+(T) | Epoch=016, loss=11.2849, con=7.2553, intent=2.5386, rec=0.0111, igqc=6.2373, this epoch 165.5457, total 2756.7214
+(T) | Epoch=017, loss=11.1995, con=7.1753, intent=2.5374, rec=0.0095, igqc=6.2170, this epoch 175.6296, total 2932.3510
+(T) | Epoch=018, loss=11.1309, con=7.1192, intent=2.5329, rec=0.0075, igqc=6.1870, this epoch 172.7990, total 3105.1499
+(T) | Epoch=019, loss=11.1392, con=7.1661, intent=2.5218, rec=0.0067, igqc=6.1127, this epoch 189.7680, total 3294.9179
+(T) | Epoch=020, loss=11.1577, con=7.1517, intent=2.5153, rec=0.0078, igqc=6.1812, this epoch 189.4391, total 3484.3570  alpha=[pap:0.693, psp:0.307]
+(T) | Epoch=021, loss=11.0896, con=7.1343, intent=2.5133, rec=0.0079, igqc=6.0797, this epoch 170.7463, total 3655.1033
+(T) | Epoch=022, loss=11.1314, con=7.1216, intent=2.5118, rec=0.0079, igqc=6.1845, this epoch 163.4323, total 3818.5356
+(T) | Epoch=023, loss=11.1913, con=7.1425, intent=2.5038, rec=0.0089, igqc=6.2629, this epoch 157.2077, total 3975.7433
+(T) | Epoch=024, loss=11.0954, con=7.1437, intent=2.4962, rec=0.0085, igqc=6.0731, this epoch 148.1362, total 4123.8795
+(T) | Epoch=025, loss=11.1476, con=7.1413, intent=2.4935, rec=0.0086, igqc=6.1910, this epoch 164.7449, total 4288.6243
+(T) | Epoch=026, loss=11.1339, con=7.1947, intent=2.4935, rec=0.0090, igqc=6.0694, this epoch 172.4432, total 4461.0675
+(T) | Epoch=027, loss=11.0604, con=7.1616, intent=2.4964, rec=0.0105, igqc=5.9912, this epoch 173.2938, total 4634.3613
+(T) | Epoch=028, loss=11.0896, con=7.1054, intent=2.4957, rec=0.0123, igqc=6.1628, this epoch 154.7889, total 4789.1503
+(T) | Epoch=029, loss=11.1327, con=7.1709, intent=2.4904, rec=0.0120, igqc=6.1269, this epoch 173.6846, total 4962.8349
+(T) | Epoch=030, loss=11.1168, con=7.2061, intent=2.4830, rec=0.0123, igqc=6.0353, this epoch 155.7313, total 5118.5663  alpha=[pap:0.775, psp:0.225]
+(T) | Epoch=031, loss=11.1607, con=7.1960, intent=2.4757, rec=0.0092, igqc=6.1489, this epoch 175.7850, total 5294.3513
+(T) | Epoch=032, loss=11.0256, con=7.1689, intent=2.4693, rec=0.0128, igqc=5.9361, this epoch 174.7051, total 5469.0564
+(T) | Epoch=033, loss=10.9374, con=7.0909, intent=2.4659, rec=0.0107, igqc=5.9163, this epoch 179.7212, total 5648.7776
+(T) | Epoch=034, loss=11.0281, con=7.1309, intent=2.4644, rec=0.0126, igqc=6.0224, this epoch 150.7779, total 5799.5555
+(T) | Epoch=035, loss=11.0021, con=7.1784, intent=2.4621, rec=0.0164, igqc=5.8800, this epoch 150.0945, total 5949.6500
+(T) | Epoch=036, loss=10.9309, con=7.1397, intent=2.4604, rec=0.0186, igqc=5.8162, this epoch 175.7346, total 6125.3846
+(T) | Epoch=037, loss=11.0148, con=7.1405, intent=2.4591, rec=0.0188, igqc=5.9846, this epoch 156.1668, total 6281.5514
+(T) | Epoch=038, loss=11.0315, con=7.1976, intent=2.4582, rec=0.0154, igqc=5.9125, this epoch 154.2016, total 6435.7530
+(T) | Epoch=039, loss=11.0927, con=7.2032, intent=2.4562, rec=0.0160, igqc=6.0331, this epoch 167.1250, total 6602.8779
+(T) | Epoch=040, loss=11.0730, con=7.1823, intent=2.4529, rec=0.0205, igqc=6.0490, this epoch 227.7231, total 6830.6010  alpha=[pap:0.773, psp:0.227]
+(T) | Epoch=041, loss=11.0587, con=7.1923, intent=2.4481, rec=0.0223, igqc=6.0130, this epoch 167.1638, total 6997.7648
+(T) | Epoch=042, loss=11.1149, con=7.1650, intent=2.4419, rec=0.0231, igqc=6.1805, this epoch 151.0012, total 7148.7660
+(T) | Epoch=043, loss=10.9359, con=7.1462, intent=2.4370, rec=0.0212, igqc=5.8636, this epoch 152.3212, total 7301.0872
+(T) | Epoch=044, loss=10.9929, con=7.1916, intent=2.4316, rec=0.0223, igqc=5.8988, this epoch 149.7319, total 7450.8191
+(T) | Epoch=045, loss=10.8497, con=7.1923, intent=2.4289, rec=0.0215, igqc=5.6246, this epoch 159.8815, total 7610.7006
+(T) | Epoch=046, loss=10.9488, con=7.1665, intent=2.4280, rec=0.0265, igqc=5.8897, this epoch 149.1881, total 7759.8886
+(T) | Epoch=047, loss=10.9288, con=7.1599, intent=2.4250, rec=0.0277, igqc=5.8813, this epoch 147.2014, total 7907.0900
+(T) | Epoch=048, loss=10.9422, con=7.1734, intent=2.4221, rec=0.0291, igqc=5.8948, this epoch 133.9971, total 8041.0871
+(T) | Epoch=049, loss=10.9911, con=7.2475, intent=2.4189, rec=0.0283, igqc=5.8512, this epoch 143.1538, total 8184.2409
+(T) | Epoch=050, loss=11.1109, con=7.1996, intent=2.4144, rec=0.0259, igqc=6.1933, this epoch 132.5058, total 8316.7467  alpha=[pap:0.816, psp:0.184]
+(T) | Epoch=051, loss=10.9747, con=7.2537, intent=2.4096, rec=0.0295, igqc=5.8158, this epoch 139.1381, total 8455.8848
+(T) | Epoch=052, loss=11.2068, con=7.3945, intent=2.4072, rec=0.0302, igqc=5.9992, this epoch 133.4070, total 8589.2918
+(T) | Epoch=053, loss=11.2068, con=7.3458, intent=2.4056, rec=0.0270, igqc=6.0932, this epoch 129.8911, total 8719.1829
+(T) | Epoch=054, loss=11.0936, con=7.1786, intent=2.4055, rec=0.0224, igqc=6.1852, this epoch 131.4537, total 8850.6366
+(T) | Epoch=055, loss=10.8515, con=7.2207, intent=2.4043, rec=0.0175, igqc=5.6028, this epoch 128.5311, total 8979.1677
+(T) | Epoch=056, loss=11.0193, con=7.3255, intent=2.4038, rec=0.0178, igqc=5.7205, this epoch 132.5525, total 9111.7202
+(T) | Epoch=057, loss=11.1372, con=7.3241, intent=2.4021, rec=0.0177, igqc=5.9552, this epoch 131.6238, total 9243.3440
+(T) | Epoch=058, loss=11.2292, con=7.3364, intent=2.4004, rec=0.0202, igqc=6.1144, this epoch 132.3281, total 9375.6721
+(T) | Epoch=059, loss=11.2488, con=7.3578, intent=2.3984, rec=0.0229, igqc=6.1136, this epoch 120.2508, total 9495.9229
+(T) | Epoch=060, loss=11.1505, con=7.3114, intent=2.3956, rec=0.0225, igqc=6.0164, this epoch 119.3661, total 9615.2890  alpha=[pap:0.827, psp:0.173]
+(T) | Epoch=061, loss=10.9742, con=7.2064, intent=2.3921, rec=0.0218, igqc=5.8860, this epoch 123.8227, total 9739.1118
+(T) | Epoch=062, loss=10.8234, con=7.1421, intent=2.3893, rec=0.0182, igqc=5.7280, this epoch 120.4989, total 9859.6107
+(T) | Epoch=063, loss=11.1615, con=7.2040, intent=2.3855, rec=0.0207, igqc=6.2945, this epoch 130.4331, total 9990.0438
+(T) | Epoch=064, loss=10.9540, con=7.3024, intent=2.3829, rec=0.0217, igqc=5.6903, this epoch 121.2681, total 10111.3119
+(T) | Epoch=065, loss=11.0364, con=7.2728, intent=2.3804, rec=0.0203, igqc=5.9181, this epoch 126.3477, total 10237.6596
+(T) | Epoch=066, loss=10.8815, con=7.1585, intent=2.3777, rec=0.0226, igqc=5.8370, this epoch 125.1461, total 10362.8056
+(T) | Epoch=067, loss=11.1368, con=7.2592, intent=2.3764, rec=0.0194, igqc=6.1495, this epoch 128.0109, total 10490.8166
+(T) | Epoch=068, loss=11.1258, con=7.4192, intent=2.3743, rec=0.0235, igqc=5.8156, this epoch 127.3692, total 10618.1857
+(T) | Epoch=069, loss=11.1117, con=7.4117, intent=2.3725, rec=0.0241, igqc=5.8078, this epoch 128.3603, total 10746.5460
+(T) | Epoch=070, loss=11.1245, con=7.3056, intent=2.3701, rec=0.0259, igqc=6.0488, this epoch 121.5357, total 10868.0817  alpha=[pap:0.853, psp:0.147]
+(T) | Epoch=071, loss=10.9131, con=7.3144, intent=2.3679, rec=0.0279, igqc=5.6138, this epoch 123.9139, total 10991.9956
+(T) | Epoch=072, loss=11.1511, con=7.4156, intent=2.3645, rec=0.0332, igqc=5.8935, this epoch 124.0320, total 11116.0276
+(T) | Epoch=073, loss=11.0801, con=7.4494, intent=2.3638, rec=0.0374, igqc=5.6853, this epoch 132.1943, total 11248.2219
+(T) | Epoch=074, loss=11.1149, con=7.3914, intent=2.3624, rec=0.0313, igqc=5.8694, this epoch 128.6540, total 11376.8759
+(T) | Epoch=075, loss=10.9787, con=7.3210, intent=2.3630, rec=0.0337, igqc=5.7321, this epoch 135.6798, total 11512.5558
+(T) | Epoch=076, loss=11.0230, con=7.2950, intent=2.3657, rec=0.0356, igqc=5.8637, this epoch 131.2317, total 11643.7875
+(T) | Epoch=077, loss=11.0938, con=7.3061, intent=2.3694, rec=0.0293, igqc=5.9701, this epoch 142.2297, total 11786.0172
+(T) | Epoch=078, loss=11.1430, con=7.3392, intent=2.3746, rec=0.0249, igqc=5.9920, this epoch 132.7030, total 11918.7202
+(T) | Epoch=079, loss=11.1397, con=7.3270, intent=2.3760, rec=0.0213, igqc=6.0022, this epoch 121.8711, total 12040.5912
+(T) | Epoch=080, loss=10.7387, con=7.2545, intent=2.3739, rec=0.0189, igqc=5.3402, this epoch 125.9525, total 12166.5437  alpha=[pap:0.829, psp:0.171]
+(T) | Epoch=081, loss=10.8947, con=7.1897, intent=2.3692, rec=0.0228, igqc=5.7804, this epoch 132.6563, total 12299.2000
+(T) | Epoch=082, loss=10.9955, con=7.1876, intent=2.3657, rec=0.0245, igqc=5.9802, this epoch 125.2522, total 12424.4522
+(T) | Epoch=083, loss=11.0652, con=7.2300, intent=2.3632, rec=0.0257, igqc=6.0290, this epoch 126.6524, total 12551.1046
+(T) | Epoch=084, loss=11.0439, con=7.2873, intent=2.3621, rec=0.0240, igqc=5.8669, this epoch 127.4886, total 12678.5932
+(T) | Epoch=085, loss=11.0286, con=7.3337, intent=2.3631, rec=0.0241, igqc=5.7494, this epoch 186.0376, total 12864.6307
+(T) | Epoch=086, loss=11.2984, con=7.3124, intent=2.3651, rec=0.0206, igqc=6.3433, this epoch 147.9983, total 13012.6290
+(T) | Epoch=087, loss=10.9034, con=7.2052, intent=2.3730, rec=0.0219, igqc=5.7797, this epoch 141.8498, total 13154.4788
+(T) | Epoch=088, loss=10.9610, con=7.1374, intent=2.3828, rec=0.0351, igqc=6.0377, this epoch 140.0194, total 13294.4982
+(T) | Epoch=089, loss=11.1577, con=7.2351, intent=2.3880, rec=0.0306, igqc=6.2500, this epoch 143.3361, total 13437.8343
+(T) | Epoch=090, loss=10.9955, con=7.3232, intent=2.3827, rec=0.0416, igqc=5.7607, this epoch 150.2016, total 13588.0360  alpha=[pap:0.901, psp:0.099]
+(T) | Epoch=091, loss=11.0956, con=7.2914, intent=2.3771, rec=0.0345, igqc=6.0337, this epoch 161.2759, total 13749.3118
+(T) | Epoch=092, loss=11.0103, con=7.2800, intent=2.3632, rec=0.0399, igqc=5.8967, this epoch 149.2710, total 13898.5828
+(T) | Epoch=093, loss=10.9321, con=7.2535, intent=2.3570, rec=0.0361, igqc=5.7980, this epoch 150.9336, total 14049.5164
+(T) | Epoch=094, loss=10.8882, con=7.1977, intent=2.3542, rec=0.0279, igqc=5.8233, this epoch 173.9241, total 14223.4405
+(T) | Epoch=095, loss=11.1325, con=7.4027, intent=2.3521, rec=0.0293, igqc=5.9036, this epoch 150.5698, total 14374.0102
+(T) | Epoch=096, loss=11.1486, con=7.5350, intent=2.3493, rec=0.0322, igqc=5.6722, this epoch 190.4319, total 14564.4421
+(T) | Epoch=097, loss=11.3010, con=7.4768, intent=2.3497, rec=0.0297, igqc=6.0877, this epoch 167.8525, total 14732.2946
+(T) | Epoch=098, loss=11.0828, con=7.3957, intent=2.3556, rec=0.0339, igqc=5.8028, this epoch 156.4864, total 14888.7810
+(T) | Epoch=099, loss=11.1424, con=7.3973, intent=2.3601, rec=0.0232, igqc=5.9096, this epoch 189.5062, total 15078.2872
+(T) | Epoch=100, loss=11.1885, con=7.4147, intent=2.3632, rec=0.0195, igqc=5.9535, this epoch 179.1918, total 15257.4790  alpha=[pap:0.882, psp:0.118]
+(T) | Epoch=101, loss=10.9984, con=7.4203, intent=2.3694, rec=0.0189, igqc=5.5478, this epoch 188.4579, total 15445.9368
+(T) | Epoch=102, loss=11.0643, con=7.4326, intent=2.3757, rec=0.0158, igqc=5.6424, this epoch 178.8755, total 15624.8123
+(T) | Epoch=103, loss=11.1095, con=7.4324, intent=2.3748, rec=0.0149, igqc=5.7250, this epoch 218.6447, total 15843.4571
+(T) | Epoch=104, loss=11.1532, con=7.4012, intent=2.3633, rec=0.0138, igqc=5.8747, this epoch 200.2960, total 16043.7531
+(T) | Epoch=105, loss=11.1761, con=7.3888, intent=2.3499, rec=0.0149, igqc=5.9475, this epoch 229.8789, total 16273.6320
+(T) | Epoch=106, loss=11.0611, con=7.4226, intent=2.3443, rec=0.0176, igqc=5.6532, this epoch 174.5570, total 16448.1890
+(T) | Epoch=107, loss=11.1361, con=7.4616, intent=2.3477, rec=0.0231, igqc=5.7294, this epoch 190.5928, total 16638.7818
+(T) | Epoch=108, loss=11.2328, con=7.4614, intent=2.3536, rec=0.0213, igqc=5.9319, this epoch 193.7107, total 16832.4924
+(T) | Epoch=109, loss=11.2054, con=7.4367, intent=2.3574, rec=0.0206, igqc=5.9421, this epoch 186.9728, total 17019.4653
+(T) | Epoch=110, loss=11.1453, con=7.4056, intent=2.3606, rec=0.0183, igqc=5.8999, this epoch 162.1392, total 17181.6045  alpha=[pap:0.856, psp:0.144]
+(T) | Epoch=111, loss=10.8962, con=7.3632, intent=2.3603, rec=0.0203, igqc=5.4965, this epoch 205.9647, total 17387.5691
+(T) | Epoch=112, loss=10.7310, con=7.3004, intent=2.3574, rec=0.0196, igqc=5.2941, this epoch 192.7428, total 17580.3119
+(T) | Epoch=113, loss=11.0024, con=7.2671, intent=2.3522, rec=0.0235, igqc=5.9025, this epoch 166.9752, total 17747.2871
+(T) | Epoch=114, loss=11.0335, con=7.3246, intent=2.3486, rec=0.0254, igqc=5.8524, this epoch 161.0947, total 17908.3818
+(T) | Epoch=115, loss=11.1659, con=7.4378, intent=2.3435, rec=0.0241, igqc=5.8973, this epoch 152.9395, total 18061.3213
+(T) | Epoch=116, loss=11.1863, con=7.5068, intent=2.3404, rec=0.0248, igqc=5.8054, this epoch 212.6019, total 18273.9232
+(T) | Epoch=117, loss=11.3256, con=7.4669, intent=2.3383, rec=0.0222, igqc=6.1664, this epoch 251.3303, total 18525.2534
+(T) | Epoch=118, loss=10.8465, con=7.3502, intent=2.3310, rec=0.0247, igqc=5.4444, this epoch 240.2619, total 18765.5153
+(T) | Epoch=119, loss=10.8170, con=7.2684, intent=2.3250, rec=0.0248, igqc=5.5510, this epoch 239.4644, total 19004.9797
+(T) | Epoch=120, loss=10.8915, con=7.2925, intent=2.3199, rec=0.0219, igqc=5.6550, this epoch 213.3328, total 19218.3125  alpha=[pap:0.870, psp:0.130]
+(T) | Epoch=121, loss=10.9147, con=7.3178, intent=2.3168, rec=0.0216, igqc=5.6509, this epoch 237.4079, total 19455.7203

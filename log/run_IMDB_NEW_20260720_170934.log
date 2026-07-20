@@ -1,0 +1,62 @@
+[log] 运行日志写入: log\run_IMDB_NEW_20260720_170934.log
+Using CPU
+Using CPU
+  [cs_full_graph] IMDB_NEW: merged ['mam.npz', 'mdm.npz'] -> 159228 directed edges (no sparsify)
+[data] 多关系 R=2: mam(143122 edges), mdm(18710 edges)
+[intent] dynamic query-based, dim=256
+[encoder] MultiRelation+ICRA  R=2 hii_heads=4 icra_heads=4 icra_dim=128
+(T) | Epoch=001, loss=9.1420, con=8.7307, intent=4.9980, rec=0.0026, this epoch 124.3057, total 124.3057  alpha=[mam:0.508, mdm:0.492]
+(T) | Epoch=002, loss=8.5646, con=8.2538, intent=3.8509, rec=0.0074, this epoch 114.0574, total 238.3631
+(T) | Epoch=003, loss=8.3132, con=8.0500, intent=3.1253, rec=0.0111, this epoch 149.1457, total 387.5088
+(T) | Epoch=004, loss=7.9357, con=7.6794, intent=2.8529, rec=0.0122, this epoch 139.6713, total 527.1802
+(T) | Epoch=005, loss=7.7870, con=7.5208, intent=2.7734, rec=0.0103, this epoch 143.8732, total 671.0534
+(T) | Epoch=006, loss=7.6864, con=7.4125, intent=2.7543, rec=0.0113, this epoch 117.1221, total 788.1755
+Traceback (most recent call last):
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\train_ig.py", line 529, in <module>
+    z_adv, z_rec, reg, fea_up, fea_lo, _ = build_views(
+                                           ^^^^^^^^^^^^
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\train_ig.py", line 485, in _build_views_multi
+    _, zr, alpha = cont_m.encoder.encode_per_relation(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\multi_relation_fusion.py", line 105, in encode_per_relation
+    zs.append(self.encoders[r](x, edge_index_list[r], ew, intent))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\hii_gnn.py", line 162, in forward
+    h = self.local(x, edge_index, edge_weight, intent_h)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\论文code\Edge Self-Adversarial Augmentation Enhances Graph Contrastive Learning\EDA-GCL-main\hii_gnn.py", line 65, in forward
+    out = self.propagate(edge_index, x=h, gate=gate,
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zhaobin3\AppData\Local\Temp\hii_gnn_LocalIntentInjectionLayer_propagate_3p3jo2zz.py", line 182, in propagate
+    kwargs = self.collect(
+             ^^^^^^^^^^^^^
+  File "C:\Users\zhaobin3\AppData\Local\Temp\hii_gnn_LocalIntentInjectionLayer_propagate_3p3jo2zz.py", line 102, in collect
+    x_i = self._index_select(x, edge_index_i)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch_geometric\nn\conv\message_passing.py", line 267, in _index_select
+    return self._index_select_safe(src, index)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\torch_geometric\nn\conv\message_passing.py", line 271, in _index_select_safe
+    return src.index_select(self.node_dim, index)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+Exception ignored in atexit callback: <bound method finalize._exitfunc of <class 'weakref.finalize'>>
+Traceback (most recent call last):
+  File "D:\programData\conda\envs\lunwen\Lib\weakref.py", line 666, in _exitfunc
+    f()
+  File "D:\programData\conda\envs\lunwen\Lib\weakref.py", line 590, in __call__
+    return info.func(*info.args, **(info.kwargs or {}))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\programData\conda\envs\lunwen\Lib\site-packages\numba\core\runtime\nrt.py", line 59, in shutdown
+    _nrt.memsys_shutdown()
+KeyboardInterrupt: 

@@ -373,9 +373,49 @@ class IntentContrastiveModel(nn.Module):
         p_rec = F.softmax(sr @ sr.t() / self.tau, dim=-1)
         return F.kl_div(p_adv, p_rec, reduction='batchmean')
 
+    def intent_guided_qc_loss(self, z, q_idx, intent_batch, pos_idx, neg_idx,
+                              gate=True, tau_gate=0.2):
+        """意图引导的查询中心对比 (IGQC): 自监督抬高 oracle 排序天花板。
+
+        对每个查询 q, 在编码器输出空间 z(= oracle 排序空间)里把 q 的全量图
+        邻居(结构正样本)拉近、随机非邻居(负样本)推远; 正样本按"意图对齐度"
+        门控加权, 让意图相关的邻居主导拉拢。全程不使用标签 y。
+
+        z:            [N, H]  编码器输出(传 z_rec)
+        q_idx:        [B]     查询节点索引
+        intent_batch: [B, D]  每个查询各自生成的意图
+        pos_idx:      [B, m]  每个查询的全量图邻居(结构正样本)
+        neg_idx:      [B, n]  每个查询的随机非邻居
+        gate:         True=按意图对齐度加权正样本; False=等权(纯结构消融)
+        """
+        zc = F.normalize(z, dim=-1)                       # [N, H]
+        zq = zc[q_idx]                                     # [B, H]
+        zpos = zc[pos_idx]                                 # [B, m, H]
+        zneg = zc[neg_idx]                                 # [B, n, H]
+
+        pos_sim = torch.einsum('bh,bmh->bm', zq, zpos) / self.tau   # [B, m]
+        neg_sim = torch.einsum('bh,bnh->bn', zq, zneg) / self.tau   # [B, n]
+
+        # 多正样本 InfoNCE: 每个正样本一项, 分母 = 该正 + 全部负
+        #   per_pos_i = -log( exp(pos_i) / (exp(pos_i) + Σ_j exp(neg_j)) )
+        neg_lse = torch.logsumexp(neg_sim, dim=1, keepdim=True)     # [B, 1]
+        denom = torch.logaddexp(pos_sim, neg_lse.expand_as(pos_sim))  # [B, m]
+        per_pos = denom - pos_sim                                   # [B, m]
+
+        if gate:
+            ip = F.normalize(self.intent_proj(zpos), dim=-1)        # [B, m, D]
+            iq = F.normalize(intent_batch, dim=-1).unsqueeze(1)     # [B, 1, D]
+            gate_sim = (ip * iq).sum(dim=-1) / tau_gate             # [B, m]
+            w = torch.softmax(gate_sim, dim=1)                      # [B, m]
+        else:
+            w = torch.full_like(per_pos, 1.0 / per_pos.size(1))
+
+        return (w * per_pos).sum(dim=1).mean()
+
     def total_loss(self, z_adv, z_rec, intent_vector, reg_loss,
                    reg_lambda=0.5, adv_lambda=1.0, edge_fea_adv=None,
-                   edge_fea_rec=None, suspicious_idx=None, lambda_rec=0.1):
+                   edge_fea_rec=None, suspicious_idx=None, lambda_rec=0.1,
+                   igqc_args=None, lambda_igqc=0.0):
         """
         总损失 = L_contrastive + λ_intent * L_intent + λ_adv * L_edge
                  - λ_reg * L_reg + λ_rec * L_reconstruction
@@ -402,11 +442,17 @@ class IntentContrastiveModel(nn.Module):
             l_rec = self.reconstruction_loss(z_adv, z_rec, suspicious_idx)
             loss = loss + lambda_rec * l_rec
 
+        l_igqc = torch.tensor(0.0, device=z_adv.device)
+        if lambda_igqc > 0 and igqc_args is not None:
+            l_igqc = self.intent_guided_qc_loss(**igqc_args)
+            loss = loss + lambda_igqc * l_igqc
+
         return loss, {
             'contrastive': l_contrastive.item(),
             'intent': l_intent.item(),
             'reg': reg_loss.item(),
             'reconstruction': l_rec.item(),
+            'igqc': l_igqc.item(),
             'total': loss.item(),
         }
 

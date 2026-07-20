@@ -229,6 +229,23 @@ if __name__ == '__main__':
     parser.add_argument('--no_cs_full_graph', dest='cs_full_graph',
                         action='store_false',
                         help='关闭全量图, CS 退回默认稀疏 edge_index(旧行为)')
+    # 阶段B: 意图引导查询中心对比 (IGQC), 抬高 oracle 表示天花板
+    parser.add_argument('--lambda_igqc', type=float, default=0.0,
+                        help='IGQC 损失权重; 0=关(默认, 向后兼容), 实验设 0.5')
+    parser.add_argument('--igqc_pos', type=int, default=20,
+                        help='每个查询采样的全量图正邻居数')
+    parser.add_argument('--igqc_neg', type=int, default=512,
+                        help='每个查询采样的随机非邻居负样本数')
+    parser.add_argument('--igqc_num_queries', type=int, default=8,
+                        help='每轮采样的查询节点数(单q信号太稀疏)')
+    parser.add_argument('--igqc_intent_gate', dest='igqc_intent_gate',
+                        action='store_true', default=True,
+                        help='IGQC 正样本按意图对齐度门控加权(默认开)')
+    parser.add_argument('--no_igqc_intent_gate', dest='igqc_intent_gate',
+                        action='store_false',
+                        help='关意图门控=纯结构查询对比(消融对照)')
+    parser.add_argument('--intent_rerank_alpha', type=float, default=0.0,
+                        help='推理阶段意图 rerank 系数; 0=关(默认), 实验设 0.1~0.3')
     args = parser.parse_args()
 
     # ========== 运行日志: 全部 print/stderr 同时写入文件 (tee) ==========
@@ -475,6 +492,14 @@ if __name__ == '__main__':
 
     # ========== 训练 (Min-Max) ==========
     start = t() - train_elapsed_prev    # 续训时把已训耗时算进总时间
+    # 阶段B IGQC: 训练前建全量图邻接表(与 CS 评测同一张图, train/eval 一致)
+    igqc_adj = None
+    if args.lambda_igqc > 0:
+        igqc_adj = _build_adj_list(_cs_edge_index(data), data.num_nodes)
+        print(f"[IGQC] 全量图邻接表就绪, lambda={args.lambda_igqc}, "
+              f"pos={args.igqc_pos} neg={args.igqc_neg} "
+              f"B={args.igqc_num_queries} gate={args.igqc_intent_gate}")
+
     prev = t()
     epoch = start_epoch - 1             # 续训跳过循环时兜底: 最后已完成的轮次
     for epoch in range(start_epoch, args.num_epochs + 1):
@@ -534,12 +559,62 @@ if __name__ == '__main__':
             divergence = divergence / (divergence.max() + 1e-8)
         l_susp = F.mse_loss(node_score, divergence)
 
+        # 阶段B IGQC: 采样查询批, 意图对齐 top-k 正邻居 + 随机负样本, 逐q生成意图
+        igqc_args = None
+        if igqc_adj is not None:
+            B, m, n = args.igqc_num_queries, args.igqc_pos, args.igqc_neg
+            N = data.num_nodes
+            dev = data.x.device
+            # 采样阶段用于筛正样本的意图对齐空间(detach, 不回传到筛选)
+            with torch.no_grad():
+                z_align = F.normalize(
+                    contrastive_model.intent_proj(z_rec), dim=-1)
+            q_first = q_epoch if intent_generator is not None else int(
+                torch.randint(0, N, (1,), generator=rng_q).item())
+            q_list = [q_first] + torch.randint(
+                0, N, (B - 1,), generator=rng_q).tolist()
+            pos_rows, neg_rows, valid_q, intent_list = [], [], [], []
+            for qi in q_list:
+                nbrs = list(igqc_adj[qi])
+                if len(nbrs) == 0:
+                    continue
+                # 逐q意图(保留梯度以端到端训练生成器)
+                if intent_generator is not None:
+                    iq = intent_generator(data.x[qi])
+                else:
+                    iq = intent_vector
+                # 意图对齐 top-m: 门控开且邻居够多时按对齐度筛掉跨类邻居
+                if args.igqc_intent_gate and len(nbrs) > m:
+                    nbr_t = torch.tensor(nbrs, device=dev)
+                    with torch.no_grad():
+                        iq_n = F.normalize(iq.detach(), dim=-1)
+                        align = z_align[nbr_t] @ iq_n
+                        top = torch.topk(align, m).indices
+                    pos_rows.append(nbr_t[top].cpu().numpy())
+                else:
+                    pos_rows.append(np.random.choice(
+                        nbrs, size=m, replace=len(nbrs) < m))
+                neg_rows.append(np.random.randint(0, N, size=n))
+                valid_q.append(qi)
+                intent_list.append(iq)
+            if valid_q:
+                intent_batch = torch.stack(intent_list)
+                igqc_args = dict(
+                    z=z_rec,
+                    q_idx=torch.tensor(valid_q, device=dev),
+                    intent_batch=intent_batch,
+                    pos_idx=torch.tensor(np.stack(pos_rows), device=dev),
+                    neg_idx=torch.tensor(np.stack(neg_rows), device=dev),
+                    gate=args.igqc_intent_gate,
+                )
+
         model_loss, loss_info = contrastive_model.total_loss(
             z_adv, z_rec, intent_vector, reg,
             reg_lambda=args.reg_lambda, adv_lambda=args.adv_lambda,
             edge_fea_adv=fea_up, edge_fea_rec=fea_lo,
             suspicious_idx=susp_idx,
-            lambda_rec=args.lambda_rec
+            lambda_rec=args.lambda_rec,
+            igqc_args=igqc_args, lambda_igqc=args.lambda_igqc
         )
         model_loss = model_loss + args.lambda_rec * l_susp
 
@@ -557,7 +632,8 @@ if __name__ == '__main__':
             f'con={loss_info["contrastive"]:.4f}, '
             f'intent={loss_info["intent"]:.4f}, '
             f'rec={loss_info["reconstruction"]:.4f}, '
-            f'this epoch {now - prev:.4f}, total {now - start:.4f}'
+            + (f'igqc={loss_info["igqc"]:.4f}, ' if args.lambda_igqc > 0 else '')
+            + f'this epoch {now - prev:.4f}, total {now - start:.4f}'
         )
         # 多关系: 周期性打印 ICRA 各关系平均权重, 监控是否塌缩
         if use_multi and alpha is not None and (epoch % 10 == 0 or epoch == 1):
@@ -636,14 +712,18 @@ if __name__ == '__main__':
             topk=(10, 20, 50, 'oracle'),
             num_queries=args.cs_num_queries, seed=args.seed,
             node_boost=node_boost, boost_factor=args.suspicious_boost,
-            queries=fixed_queries, edge_index=ei_arg
+            queries=fixed_queries, edge_index=ei_arg,
+            intent_proj_fn=contrastive_model.intent_proj,
+            intent_rerank_alpha=args.intent_rerank_alpha
         )
         cs_greedy = community_search_greedy_dynamic(
             contrastive_model, intent_generator, data, ew_arg,
             w_list=(0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0),
             num_queries=args.cs_num_queries, seed=args.seed,
             node_boost=node_boost, boost_factor=args.suspicious_boost,
-            queries=fixed_queries, edge_index=ei_arg
+            queries=fixed_queries, edge_index=ei_arg,
+            intent_proj_fn=contrastive_model.intent_proj,
+            intent_rerank_alpha=args.intent_rerank_alpha
         )
     else:
         cs_results = community_search(emb, data, topk=(10, 20, 50, 'oracle'),
