@@ -82,13 +82,14 @@ class AdversarialPatternLibrary:
             text = f"{p['name']}: {p['description']}"
             texts.append(text)
 
-        embeddings = self.encoder.encode(
-            texts,
-            convert_to_tensor=True,
-            normalize_embeddings=True,
-            show_progress_bar=True
-        )
-        return embeddings.to(self.device)
+        with torch.no_grad():
+            embeddings = self.encoder.encode(
+                texts,
+                convert_to_tensor=True,
+                normalize_embeddings=True,
+                show_progress_bar=True
+            )
+        return embeddings.detach().to(self.device)
 
     def match_patterns(self,
                        query_text: str,
@@ -109,11 +110,12 @@ class AdversarialPatternLibrary:
             raise RuntimeError("Encoder not available. Install sentence-transformers.")
 
         # 编码查询
-        query_emb = self.encoder.encode(
-            [query_text],
-            convert_to_tensor=True,
-            normalize_embeddings=True
-        ).to(self.device)
+        with torch.no_grad():
+            query_emb = self.encoder.encode(
+                [query_text],
+                convert_to_tensor=True,
+                normalize_embeddings=True
+            ).to(self.device).detach()
 
         # 计算相似度
         if category:
@@ -286,11 +288,12 @@ class AdversarialIntentEncoder(nn.Module):
             details: (可选) 包含匹配模式、置信度等信息
         """
         # Step 1: 编码查询
-        query_emb = self.pattern_library.encoder.encode(
-            [query_text],
-            convert_to_tensor=True,
-            normalize_embeddings=True
-        )  # [1, encoder_dim]
+        with torch.no_grad():
+            query_emb = self.pattern_library.encoder.encode(
+                [query_text],
+                convert_to_tensor=True,
+                normalize_embeddings=True
+            ).detach()  # [1, encoder_dim]
 
         # Step 2: 匹配相关模式
         matched_results = self.pattern_library.match_patterns(query_text, top_k=top_k_patterns)
@@ -298,7 +301,7 @@ class AdversarialIntentEncoder(nn.Module):
         matched_scores = torch.tensor([r['score'] for r in matched_results])
 
         # 获取匹配模式的嵌入
-        pattern_embs = self.pattern_library.pattern_embeddings[matched_indices]  # [k, encoder_dim]
+        pattern_embs = self.pattern_library.pattern_embeddings[matched_indices].detach()  # [k, encoder_dim]
 
         # Step 3: 投影到意图空间
         query_proj = self.query_projector(query_emb)  # [1, intent_dim]
@@ -376,16 +379,17 @@ class SimpleIntentEncoder(nn.Module):
         使用加权平均融合查询和匹配模式
         """
         # 编码查询
-        query_emb = self.pattern_library.encoder.encode(
-            [query_text],
-            convert_to_tensor=True,
-            normalize_embeddings=True
-        )
+        with torch.no_grad():
+            query_emb = self.pattern_library.encoder.encode(
+                [query_text],
+                convert_to_tensor=True,
+                normalize_embeddings=True
+            ).detach()
 
         # 匹配模式
         matched_results = self.pattern_library.match_patterns(query_text, top_k=top_k_patterns)
         matched_indices = [self.pattern_library.patterns.index(r['pattern']) for r in matched_results]
-        pattern_embs = self.pattern_library.pattern_embeddings[matched_indices]
+        pattern_embs = self.pattern_library.pattern_embeddings[matched_indices].detach()
 
         # 计算注意力权重
         similarities = torch.tensor([r['score'] for r in matched_results])

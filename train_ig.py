@@ -115,12 +115,14 @@ def generate_ar_edge_weight(edge_info, temperature=1.0, bias=0.0001):
 
 
 def build_intent_vector(source, query, intent_dim, device, seed,
-                        encoder_name='paraphrase-multilingual-MiniLM-L12-v2'):
+                        encoder_name='paraphrase-multilingual-MiniLM-L12-v2',
+                        library_path=None):
     """构建意图向量。encoder 不可用时回退为固定随机向量。"""
     if source == 'encoder':
         try:
             from adversarial_intent_encoder import SimpleIntentEncoder
             enc = SimpleIntentEncoder(intent_dim=intent_dim,
+                                      library_path=library_path,
                                       encoder_name=encoder_name)
             with torch.no_grad():
                 iv, _ = enc(query, top_k_patterns=5)
@@ -139,6 +141,66 @@ def filter_upper_edges(edges):
     u, v = edges[0], edges[1]
     mask = u < v
     return torch.stack([u[mask], v[mask]], dim=0)
+
+
+def parse_topk_arg(value):
+    parsed = []
+    for item in value.split(','):
+        item = item.strip()
+        if not item:
+            continue
+        parsed.append('oracle' if item.lower() == 'oracle' else int(item))
+    return tuple(parsed)
+
+
+def parse_float_list_arg(value):
+    return tuple(float(item.strip()) for item in value.split(',') if item.strip())
+
+
+def perturb_edge_index(edge_index, num_nodes, mode='none', rate=0.0, seed=0):
+    if mode == 'none' or rate <= 0:
+        return edge_index
+
+    device = edge_index.device
+    upper = filter_upper_edges(edge_index)
+    num_edges = upper.size(1)
+    if num_edges == 0:
+        return edge_index
+
+    g = torch.Generator(device='cpu').manual_seed(seed)
+    keep = torch.ones(num_edges, dtype=torch.bool)
+    num_change = min(num_edges, max(1, int(num_edges * rate)))
+
+    if mode in ('drop', 'rewire'):
+        drop_idx = torch.randperm(num_edges, generator=g)[:num_change]
+        keep[drop_idx] = False
+    kept = upper[:, keep].cpu()
+
+    add_edges = []
+    if mode in ('add', 'rewire'):
+        existing = set((int(a), int(b)) for a, b in zip(upper[0].cpu(), upper[1].cpu()))
+        attempts = 0
+        max_attempts = max(1000, num_change * 50)
+        while len(add_edges) < num_change and attempts < max_attempts:
+            attempts += 1
+            u = int(torch.randint(0, num_nodes, (1,), generator=g).item())
+            v = int(torch.randint(0, num_nodes, (1,), generator=g).item())
+            if u == v:
+                continue
+            a, b = (u, v) if u < v else (v, u)
+            if (a, b) in existing:
+                continue
+            existing.add((a, b))
+            add_edges.append((a, b))
+
+    if add_edges:
+        add_t = torch.tensor(add_edges, dtype=torch.long).t()
+        kept = torch.cat([kept, add_t], dim=1)
+    if kept.numel() == 0:
+        kept = upper.cpu()
+
+    rev = kept.flip(0)
+    return torch.cat([kept, rev], dim=1).to(device)
 
 
 if __name__ == '__main__':
@@ -169,12 +231,30 @@ if __name__ == '__main__':
                         help='动态意图社区搜索时采样的查询数 (每个查询重编码一次)')
     parser.add_argument('--query', type=str,
                         default='找出在社交网络上通过隐蔽连接协同的群体')
+    parser.add_argument('--intent_encoder_name', type=str,
+                        default='paraphrase-multilingual-MiniLM-L12-v2',
+                        help='Text encoder for --intent_source encoder; no LLM is called')
+    parser.add_argument('--intent_library_path', type=str, default=None,
+                        help='Adversarial pattern library JSON path; None=default bundled library')
     parser.add_argument('--adv_temp', type=float, default=1.0)
     parser.add_argument('--bias', type=float, default=0.0001)
     parser.add_argument('--meta_path', type=str, default=None,
                         help='For ACM/DBLP/IMDB: single meta-path file (e.g. pap.npz). None=merge all.')
     parser.add_argument('--num_cand_per_node', type=int, default=5,
-                        help='Candidate new edges per node for reconstruction view')
+                        help='Final candidate reconstruction edges per node')
+    parser.add_argument('--cand_sources', type=str, default='embed',
+                        help='Comma-separated candidate sources: embed,twohop,semantic,common,intent')
+    parser.add_argument('--cand_source_topk', type=int, default=None,
+                        help='Per-source candidate top-k before merging; None=derived from num_cand_per_node')
+    parser.add_argument('--cand_label_mode', type=str, default='soft',
+                        choices=['soft', 'hard', 'consensus'],
+                        help='Pseudo-label mode for candidate reconstruction BCE')
+    parser.add_argument('--cand_hard_threshold', type=float, default=0.5,
+                        help='Threshold used by hard candidate pseudo labels')
+    parser.add_argument('--lambda_cand_bce', type=float, default=0.0,
+                        help='Candidate-edge reconstruction BCE loss weight')
+    parser.add_argument('--disable_candidate_edges', action='store_true',
+                        help='Disable reconstruction candidate edges')
     parser.add_argument('--cand_refresh_interval', type=int, default=20,
                         help='Refresh candidate edges every N epochs (0=only once)')
     # 创新点三/四
@@ -246,7 +326,36 @@ if __name__ == '__main__':
                         help='关意图门控=纯结构查询对比(消融对照)')
     parser.add_argument('--intent_rerank_alpha', type=float, default=0.0,
                         help='推理阶段意图 rerank 系数; 0=关(默认), 实验设 0.1~0.3')
+    parser.add_argument('--no_intent_loss', action='store_true',
+                        help='Ablation: disable intent consistency loss')
+    parser.add_argument('--no_suspicious_kl', action='store_true',
+                        help='Ablation: disable suspicious-node KL reconstruction loss')
+    parser.add_argument('--no_suspicious_boost', action='store_true',
+                        help='Ablation: disable suspicious-node boost during community search')
+    parser.add_argument('--no_edge_feature_loss', action='store_true',
+                        help='Ablation: disable edge feature consistency loss')
+    parser.add_argument('--cs_topk', type=str, default='10,20,50,oracle',
+                        help='Comma-separated community-search top-k values')
+    parser.add_argument('--cs_w_list', type=str,
+                        default='0.0,0.1,0.2,0.3,0.5,0.7,1.0,1.5,2.0',
+                        help='Comma-separated greedy community-search w values')
+    parser.add_argument('--compute_structure_metrics', action='store_true',
+                        help='Compute density/conductance/diameter in greedy CS')
+    parser.add_argument('--eval_perturb_mode', type=str, default='none',
+                        choices=['none', 'drop', 'add', 'rewire'],
+                        help='Evaluation-only graph perturbation mode')
+    parser.add_argument('--eval_perturb_rate', type=float, default=0.0,
+                        help='Ratio of edges to perturb during evaluation')
+    parser.add_argument('--eval_perturb_seed', type=int, default=123,
+                        help='Seed for evaluation-only graph perturbation')
     args = parser.parse_args()
+    cs_topk = parse_topk_arg(args.cs_topk)
+    cs_w_list = parse_float_list_arg(args.cs_w_list)
+    effective_num_cand_per_node = 0 if args.disable_candidate_edges else args.num_cand_per_node
+    effective_lambda_intent = 0.0 if args.no_intent_loss else args.lambda_intent
+    effective_adv_lambda = 0.0 if args.no_edge_feature_loss else args.adv_lambda
+    effective_lambda_rec = 0.0 if args.no_suspicious_kl else args.lambda_rec
+    effective_lambda_cand_bce = 0.0 if args.disable_candidate_edges else args.lambda_cand_bce
 
     # ========== 运行日志: 全部 print/stderr 同时写入文件 (tee) ==========
     os.makedirs("log", exist_ok=True)
@@ -256,6 +365,13 @@ if __name__ == '__main__':
     sys.stdout = _Tee(sys.__stdout__, _run_log_fh)
     sys.stderr = _Tee(sys.__stderr__, _run_log_fh)
     print(f"[log] 运行日志写入: {run_log_path}")
+    print(f"[config] cand_sources={args.cand_sources} "
+          f"num_cand_per_node={effective_num_cand_per_node} "
+          f"cand_label_mode={args.cand_label_mode} "
+          f"lambda_cand_bce={effective_lambda_cand_bce} "
+          f"cs_topk={cs_topk} cs_w_list={cs_w_list} "
+          f"eval_perturb={args.eval_perturb_mode}:{args.eval_perturb_rate} "
+          f"seed={args.seed}")
 
     print("Using CPU")
     program_start = t()  # 总运行时间起点 (含数据加载/建模/训练/评估)
@@ -324,7 +440,9 @@ if __name__ == '__main__':
     else:
         intent_generator = None
         intent_vector = build_intent_vector(
-            args.intent_source, args.query, args.intent_dim, device, args.seed
+            args.intent_source, args.query, args.intent_dim, device, args.seed,
+            encoder_name=args.intent_encoder_name,
+            library_path=args.intent_library_path
         )
         print(f"[intent] source={args.intent_source}, dim={intent_vector.shape[0]}")
 
@@ -354,7 +472,7 @@ if __name__ == '__main__':
 
     contrastive_model = IntentContrastiveModel(
         encoder, args.num_hidden, args.num_proj_hidden, args.intent_dim,
-        tau=args.tau, lambda_intent=args.lambda_intent
+        tau=args.tau, lambda_intent=effective_lambda_intent
     ).to(device)
 
     # 创新点四: 可疑节点识别器 (随主模型一起优化)
@@ -373,8 +491,12 @@ if __name__ == '__main__':
 
     adv_model = IntentGuidedAdversarialModel(
         encoder, args.num_hidden, args.intent_dim, args.num_edge_hidden,
-        num_cand_per_node=args.num_cand_per_node,
-        num_relations=(data.num_relations if use_multi else 1)
+        num_cand_per_node=effective_num_cand_per_node,
+        num_relations=(data.num_relations if use_multi else 1),
+        cand_sources=args.cand_sources,
+        cand_source_topk=args.cand_source_topk,
+        cand_label_mode=args.cand_label_mode,
+        cand_hard_threshold=args.cand_hard_threshold
     ).to(device)
     optimizer_adv = torch.optim.Adam(
         adv_model.parameters(), lr=args.learning_rate_adv,
@@ -458,13 +580,21 @@ if __name__ == '__main__':
             rei = data.edge_index
             rew = torch.cat([rw, rw], dim=0)
         zr = cont_m(data.x, rei, rew, intent)
-        return za, zr, rg, info['upper_edge_fea'], info['lower_edge_fea'], None
+        edge_aux = {
+            'alpha': None,
+            'cand_logits': info['cand_edge_logits'],
+            'cand_targets': info['cand_edge_targets'],
+            'num_cand': info['cand_edges'].size(1),
+        }
+        return za, zr, rg, info['upper_edge_fea'], info['lower_edge_fea'], edge_aux
 
     def _build_views_multi(adv_m, cont_m, intent):
         """多关系模式: per-relation 扰动 → 各用各的 adv/rec 边 → ICRA 融合。"""
         infos = adv_m.forward_multi(data.x, data.edge_index_list, ones_list, intent)
         adv_ws, rec_ei_list, rec_ew_list = [], [], []
         regs, fea_ups, fea_los = [], [], []
+        cand_logits, cand_targets = [], []
+        num_cand = 0
         for r, info in enumerate(infos):
             aw, rw, rg, cw = generate_ar_edge_weight(info, args.adv_temp, args.bias)
             adv_ws.append(torch.cat([aw, aw], dim=0))
@@ -481,12 +611,21 @@ if __name__ == '__main__':
             regs.append(rg)
             fea_ups.append(info['upper_edge_fea'])
             fea_los.append(info['lower_edge_fea'])
+            cand_logits.append(info['cand_edge_logits'])
+            cand_targets.append(info['cand_edge_targets'])
+            num_cand += info['cand_edges'].size(1)
         za = cont_m(data.x, data.edge_index_list, adv_ws, intent)
         _, zr, alpha = cont_m.encoder.encode_per_relation(
             data.x, rec_ei_list, rec_ew_list, intent)
         reg_mean = torch.stack(regs).mean()
+        edge_aux = {
+            'alpha': alpha,
+            'cand_logits': torch.cat(cand_logits, 0),
+            'cand_targets': torch.cat(cand_targets, 0),
+            'num_cand': num_cand,
+        }
         return (za, zr, reg_mean, torch.cat(fea_ups, 0),
-                torch.cat(fea_los, 0), alpha)
+                torch.cat(fea_los, 0), edge_aux)
 
     build_views = _build_views_multi if use_multi else _build_views_single
 
@@ -531,7 +670,7 @@ if __name__ == '__main__':
 
         loss, _ = contrastive_model.total_loss(
             z_adv, z_rec, intent_p1, reg,
-            reg_lambda=args.reg_lambda, adv_lambda=args.adv_lambda,
+            reg_lambda=args.reg_lambda, adv_lambda=effective_adv_lambda,
             edge_fea_adv=fea_up, edge_fea_rec=fea_lo
         )
         (-loss).backward()
@@ -546,8 +685,9 @@ if __name__ == '__main__':
         if intent_generator is not None:
             intent_vector = intent_generator(data.x[q_epoch])
 
-        z_adv, z_rec, reg, fea_up, fea_lo, alpha = build_views(
+        z_adv, z_rec, reg, fea_up, fea_lo, aux = build_views(
             adv_model, contrastive_model, intent_vector)
+        alpha = aux.get('alpha') if aux is not None else None
 
         # 创新点四: 识别可疑节点(用重构视图表示, 保留梯度以训练识别器)
         susp_idx, node_score = suspicious_identifier(
@@ -608,15 +748,24 @@ if __name__ == '__main__':
                     gate=args.igqc_intent_gate,
                 )
 
+        cand_rec_args = None
+        if aux is not None:
+            cand_rec_args = {
+                'logits': aux.get('cand_logits'),
+                'targets': aux.get('cand_targets'),
+            }
+
         model_loss, loss_info = contrastive_model.total_loss(
             z_adv, z_rec, intent_vector, reg,
-            reg_lambda=args.reg_lambda, adv_lambda=args.adv_lambda,
+            reg_lambda=args.reg_lambda, adv_lambda=effective_adv_lambda,
             edge_fea_adv=fea_up, edge_fea_rec=fea_lo,
-            suspicious_idx=susp_idx,
-            lambda_rec=args.lambda_rec,
-            igqc_args=igqc_args, lambda_igqc=args.lambda_igqc
+            suspicious_idx=(None if args.no_suspicious_kl else susp_idx),
+            lambda_rec=effective_lambda_rec,
+            igqc_args=igqc_args, lambda_igqc=args.lambda_igqc,
+            cand_rec_args=cand_rec_args,
+            lambda_cand_bce=effective_lambda_cand_bce
         )
-        model_loss = model_loss + args.lambda_rec * l_susp
+        model_loss = model_loss + effective_lambda_rec * l_susp
 
         # ICRA 关系熵正则: 最大化关系权重熵, 防止融合塌缩到单一 meta-path
         if use_multi and args.lambda_rel_entropy > 0 and alpha is not None:
@@ -632,6 +781,9 @@ if __name__ == '__main__':
             f'con={loss_info["contrastive"]:.4f}, '
             f'intent={loss_info["intent"]:.4f}, '
             f'rec={loss_info["reconstruction"]:.4f}, '
+            + (f'cand_bce={loss_info["cand_bce"]:.4f}, '
+               f'n_cand={loss_info["num_cand_edges"]}, '
+               if effective_lambda_cand_bce > 0 else '')
             + (f'igqc={loss_info["igqc"]:.4f}, ' if args.lambda_igqc > 0 else '')
             + f'this epoch {now - prev:.4f}, total {now - start:.4f}'
         )
@@ -665,6 +817,7 @@ if __name__ == '__main__':
         else:
             emb = contrastive_model(data.x, data.edge_index, ones, avg_intent)
         _, node_boost = suspicious_identifier(emb, data.edge_index, avg_intent)
+    node_boost_eval = None if args.no_suspicious_boost else node_boost
 
     # ========== Actor-Critic 对抗图生成器 (§7.2 Step4, 自监督) ==========
     # 主编码器收敛后单独训练, 用冻结的 emb; 不动上面的 Min-Max 主循环。
@@ -678,7 +831,7 @@ if __name__ == '__main__':
         print(f'[AC] 训练 Actor-Critic 对抗图生成器 ({args.ac_epochs} 轮)...')
         train_actor_critic(
             builder, emb.detach(), ac_adj, avg_intent.detach(),
-            node_boost=node_boost, epochs=args.ac_epochs, lr=args.ac_lr,
+            node_boost=node_boost_eval, epochs=args.ac_epochs, lr=args.ac_lr,
             seed=args.seed
         )
 
@@ -701,40 +854,61 @@ if __name__ == '__main__':
         data, num_queries=args.cs_num_queries, seed=args.seed, query_file=qf
     )
 
+    cs_eval_edge_index = _cs_edge_index(data)
+    if args.eval_perturb_mode != 'none' and args.eval_perturb_rate > 0:
+        cs_eval_edge_index = perturb_edge_index(
+            cs_eval_edge_index, data.num_nodes,
+            mode=args.eval_perturb_mode,
+            rate=args.eval_perturb_rate,
+            seed=args.eval_perturb_seed
+        )
+        data.cs_edge_index = cs_eval_edge_index
+        print(f"[eval-perturb] mode={args.eval_perturb_mode} "
+              f"rate={args.eval_perturb_rate} seed={args.eval_perturb_seed} "
+              f"edges={cs_eval_edge_index.size(1)}")
+
     if intent_generator is not None and args.encoder == 'hii':
         contrastive_model.eval()
         intent_generator.eval()
-        # 多关系: 编码器吃 edge_index_list + ones_list; 单图: 合并图
-        ew_arg = ones_list if use_multi else ones
-        ei_arg = data.edge_index_list if use_multi else None
+        # 多关系: 编码器吃 edge_index_list + ones_list; 单图扰动评估时吃扰动后的合并图
+        if use_multi:
+            ew_arg = ones_list
+            ei_arg = data.edge_index_list
+        elif args.eval_perturb_mode != 'none' and args.eval_perturb_rate > 0:
+            ew_arg = torch.ones(cs_eval_edge_index.size(1), device=device)
+            ei_arg = cs_eval_edge_index
+        else:
+            ew_arg = ones
+            ei_arg = None
         cs_results = community_search_dynamic(
             contrastive_model, intent_generator, data, ew_arg,
-            topk=(10, 20, 50, 'oracle'),
+            topk=cs_topk,
             num_queries=args.cs_num_queries, seed=args.seed,
-            node_boost=node_boost, boost_factor=args.suspicious_boost,
+            node_boost=node_boost_eval, boost_factor=args.suspicious_boost,
             queries=fixed_queries, edge_index=ei_arg,
             intent_proj_fn=contrastive_model.intent_proj,
             intent_rerank_alpha=args.intent_rerank_alpha
         )
         cs_greedy = community_search_greedy_dynamic(
             contrastive_model, intent_generator, data, ew_arg,
-            w_list=(0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0),
+            w_list=cs_w_list,
             num_queries=args.cs_num_queries, seed=args.seed,
-            node_boost=node_boost, boost_factor=args.suspicious_boost,
+            compute_structure=args.compute_structure_metrics,
+            node_boost=node_boost_eval, boost_factor=args.suspicious_boost,
             queries=fixed_queries, edge_index=ei_arg,
             intent_proj_fn=contrastive_model.intent_proj,
             intent_rerank_alpha=args.intent_rerank_alpha
         )
     else:
-        cs_results = community_search(emb, data, topk=(10, 20, 50, 'oracle'),
-                                      node_boost=node_boost,
+        cs_results = community_search(emb, data, topk=cs_topk,
+                                      node_boost=node_boost_eval,
                                       boost_factor=args.suspicious_boost,
                                       queries=fixed_queries)
         cs_greedy = community_search_greedy(emb, data,
-                                            w_list=(0.0, 0.1, 0.2, 0.3, 0.5,
-                                                    0.7, 1.0, 1.5, 2.0),
+                                            w_list=cs_w_list,
                                             seed=args.seed,
-                                            node_boost=node_boost,
+                                            compute_structure=args.compute_structure_metrics,
+                                            node_boost=node_boost_eval,
                                             boost_factor=args.suspicious_boost,
                                             queries=fixed_queries)
 
@@ -746,7 +920,7 @@ if __name__ == '__main__':
             sweep_sizes = [int(s) for s in args.ac_size_sweep.split(',')]
         cs_rl = community_search_rl(
             builder, emb, data, fixed_queries,
-            node_boost=node_boost, intent=avg_intent, max_sizes=sweep_sizes,
+            node_boost=node_boost_eval, intent=avg_intent, max_sizes=sweep_sizes,
             oracle_size=True
         )
 

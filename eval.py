@@ -778,6 +778,7 @@ def community_search_dynamic(encoder_fn, intent_generator, data, edge_weight,
 def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_weight,
                                      w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                                      num_queries=200, seed=0, max_iter=10000,
+                                     compute_structure=False,
                                      node_boost=None, boost_factor=1.5, queries=None,
                                      edge_index=None,
                                      intent_proj_fn=None, intent_rerank_alpha=0.0):
@@ -797,6 +798,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
         queries = rng_np.choice(N, size=num_queries, replace=False)
 
     adj = _build_adj_list(_cs_edge_index(data), N)
+    total_vol = sum(len(a) for a in adj) if compute_structure else 0
 
     label_sets = {}
     for label in np.unique(y):
@@ -804,7 +806,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
 
     mult = _boost_multiplier(node_boost, boost_factor, N)
 
-    accum = {w: {'P': [], 'R': [], 'F': [], 'J': [], 'sizes': []} for w in w_list}
+    accum = {w: {'P': [], 'R': [], 'F': [], 'J': [], 'sizes': [],
+                 'Den': [], 'Con': [], 'Dia': []} for w in w_list}
 
     for q in queries:
         truth = label_sets[y[q]].copy()
@@ -845,6 +848,9 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             a = accum[w]
             a['P'].append(p); a['R'].append(r); a['F'].append(f); a['J'].append(j)
             a['sizes'].append(len(comm))
+            if compute_structure:
+                den, con, dia = _structure_metrics(comm, adj, total_vol)
+                a['Den'].append(den); a['Con'].append(con); a['Dia'].append(dia)
 
     results = {}
     for w in w_list:
@@ -855,12 +861,20 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             'f1': float(np.mean(a['F'])) * 100 if a['F'] else 0.0,
             'jaccard': float(np.mean(a['J'])) * 100 if a['J'] else 0.0,
             'avg_size': float(np.mean(a['sizes'])) if a['sizes'] else 0.0,
+            'density': float(np.mean(a['Den'])) if a['Den'] else 0.0,
+            'conductance': float(np.mean(a['Con'])) if a['Con'] else 0.0,
+            'diameter': float(np.mean(a['Dia'])) if a['Dia'] else 0.0,
         }
+        extra = ''
+        if compute_structure:
+            extra = (f" den={results[w]['density']:.3f}"
+                     f" cond={results[w]['conductance']:.3f}"
+                     f" diam={results[w]['diameter']:.2f}")
         print(f'[CS-greedy-dyn] w={w:<4} '
               f"P={results[w]['precision']:.2f} "
               f"R={results[w]['recall']:.2f} "
               f"F1={results[w]['f1']:.2f} "
               f"Jaccard={results[w]['jaccard']:.2f} "
-              f"size={results[w]['avg_size']:.1f}")
+              f"size={results[w]['avg_size']:.1f}{extra}")
     return results
 

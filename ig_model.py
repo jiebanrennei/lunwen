@@ -93,12 +93,21 @@ class IntentGuidedAdversarialModel(nn.Module):
     """
 
     def __init__(self, encoder, num_hidden, intent_dim, num_edge_hidden,
-                 drop_p=0.1, num_cand_per_node=5, num_relations=1):
+                 drop_p=0.1, num_cand_per_node=5, num_relations=1,
+                 cand_sources='embed', cand_source_topk=None,
+                 cand_label_mode='soft', cand_hard_threshold=0.5):
         super().__init__()
 
         self.encoder = encoder
         self.num_cand_per_node = num_cand_per_node
         self.num_relations = num_relations
+        self.cand_sources = tuple(
+            s.strip().lower() for s in str(cand_sources).split(',')
+            if s.strip() and s.strip().lower() != 'none'
+        )
+        self.cand_source_topk = cand_source_topk
+        self.cand_label_mode = cand_label_mode
+        self.cand_hard_threshold = cand_hard_threshold
 
         if num_relations > 1:
             self.edge_model_adv = nn.ModuleList([
@@ -110,6 +119,8 @@ class IntentGuidedAdversarialModel(nn.Module):
                 for _ in range(num_relations)
             ])
             self._cand_edges = [None] * num_relations
+            self._cand_targets = [None] * num_relations
+            self._cand_scores = [None] * num_relations
         else:
             self.edge_model_adv = IntentGuidedEdgeModel(
                 num_hidden, intent_dim, num_edge_hidden, drop_p
@@ -118,61 +129,193 @@ class IntentGuidedAdversarialModel(nn.Module):
                 num_hidden, intent_dim, num_edge_hidden, drop_p
             )
             self._cand_edges = None
+            self._cand_targets = None
+            self._cand_scores = None
 
     def filter_upper_edges(self, edges):
         u, v = edges[0], edges[1]
         mask = u < v
         return torch.stack([u[mask], v[mask]], dim=0)
 
-    @torch.no_grad()
-    def generate_candidate_edges(self, z, upper_edges, num_nodes):
-        """
-        为重构视图挑选候选新边: 每个节点在嵌入空间取 top-k 最相似的"非邻居",
-        屏蔽已有边与自环,返回去重后的上三角候选边 [2, M]。
+    def _empty_candidates(self, device):
+        edges = torch.zeros((2, 0), dtype=torch.long, device=device)
+        scores = torch.zeros(0, dtype=torch.float, device=device)
+        return edges, scores, scores.clone()
 
-        仅做"选择"(no_grad);候选边的打分在 forward 中用 edge_model_rec 完成,
-        梯度照常回流。相似度按行分块计算,峰值内存 chunk×N 而非 N×N。
-        """
-        k = self.num_cand_per_node
+    def _source_k(self, num_nodes):
+        k = self.cand_source_topk or max(self.num_cand_per_node * 2, self.num_cand_per_node)
+        return max(0, min(k, max(0, num_nodes - 1)))
+
+    def _similarity_candidates(self, feat, upper_edges, num_nodes, k):
+        if feat is None or k <= 0 or num_nodes <= 1:
+            return self._empty_candidates(upper_edges.device)[:2]
+
+        zc = F.normalize(feat, dim=-1)
+        msrc = torch.cat([upper_edges[0], upper_edges[1]])
+        mdst = torch.cat([upper_edges[1], upper_edges[0]])
+
+        chunk = min(num_nodes, 2048)
+        src_list, dst_list, score_list = [], [], []
+        for c0 in range(0, num_nodes, chunk):
+            c1 = min(c0 + chunk, num_nodes)
+            rows = torch.arange(c0, c1, device=feat.device)
+            sim_c = zc[c0:c1] @ zc.t()
+            sim_c[rows - c0, rows] = float('-inf')
+            sel = (msrc >= c0) & (msrc < c1)
+            sim_c[msrc[sel] - c0, mdst[sel]] = float('-inf')
+            vals, idx = sim_c.topk(k, dim=1)
+            valid = torch.isfinite(vals)
+            src_list.append(rows.unsqueeze(1).expand(-1, k)[valid])
+            dst_list.append(idx[valid])
+            score_list.append(vals[valid])
+
+        if not src_list or sum(t.numel() for t in src_list) == 0:
+            return self._empty_candidates(feat.device)[:2]
+        src = torch.cat(src_list)
+        dst = torch.cat(dst_list)
+        scores = torch.cat(score_list).float()
+        u = torch.minimum(src, dst)
+        v = torch.maximum(src, dst)
+        mask = u != v
+        return torch.stack([u[mask], v[mask]], dim=0), scores[mask]
+
+    def _twohop_candidates(self, upper_edges, num_nodes, k, binary_score=False):
+        device = upper_edges.device
         if k <= 0 or num_nodes <= 1:
-            return torch.zeros((2, 0), dtype=torch.long, device=z.device)
+            return self._empty_candidates(device)[:2]
 
-        with torch.no_grad():
-            zc = F.normalize(z, dim=-1)
-            k = min(k, num_nodes - 1)
+        adj = [set() for _ in range(num_nodes)]
+        eu = upper_edges[0].detach().cpu().tolist()
+        ev = upper_edges[1].detach().cpu().tolist()
+        for u, v in zip(eu, ev):
+            if u != v:
+                adj[u].add(v)
+                adj[v].add(u)
 
-            # 需要屏蔽的已有边(两个方向),避免摊出 N×N 再逐元素填 -inf
-            msrc = torch.cat([upper_edges[0], upper_edges[1]])
-            mdst = torch.cat([upper_edges[1], upper_edges[0]])
+        src, dst, scores = [], [], []
+        for u in range(num_nodes):
+            counts = {}
+            for nb in adj[u]:
+                for w in adj[nb]:
+                    if w == u or w in adj[u]:
+                        continue
+                    counts[w] = counts.get(w, 0) + 1
+            if not counts:
+                continue
+            ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:k]
+            for v, c in ranked:
+                a, b = (u, v) if u < v else (v, u)
+                src.append(a)
+                dst.append(b)
+                scores.append(1.0 if binary_score else float(c))
 
-            chunk = min(num_nodes, 2048)
-            src_list, dst_list = [], []
-            for c0 in range(0, num_nodes, chunk):
-                c1 = min(c0 + chunk, num_nodes)
-                rows = torch.arange(c0, c1, device=z.device)
-                sim_c = zc[c0:c1] @ zc.t()                          # [c1-c0, N]
-                sim_c[rows - c0, rows] = float('-inf')             # 自环
-                sel = (msrc >= c0) & (msrc < c1)
-                sim_c[msrc[sel] - c0, mdst[sel]] = float('-inf')   # 已有边
-                vals, idx = sim_c.topk(k, dim=1)                   # [c1-c0, k]
-                valid = torch.isfinite(vals)
-                src_list.append(rows.unsqueeze(1).expand(-1, k)[valid])
-                dst_list.append(idx[valid])
+        if not src:
+            return self._empty_candidates(device)[:2]
+        return (torch.tensor([src, dst], dtype=torch.long, device=device),
+                torch.tensor(scores, dtype=torch.float, device=device))
 
-            src = torch.cat(src_list)
-            dst = torch.cat(dst_list)
-            mask = src < dst                    # 取上三角,避免方向重复
-            u, v = src[mask], dst[mask]
-            if u.numel() == 0:
-                return torch.zeros((2, 0), dtype=torch.long, device=z.device)
-            pair = torch.unique(u * num_nodes + v)  # 去重
-            return torch.stack([pair // num_nodes, pair % num_nodes], dim=0)
+    def _merge_candidates(self, candidate_items, num_nodes, device):
+        score_by_pair = {}
+        count_by_pair = {}
+        final_k = max(0, self.num_cand_per_node)
+        if final_k <= 0:
+            return self._empty_candidates(device)
+
+        for edges, scores in candidate_items:
+            if edges is None or edges.numel() == 0:
+                continue
+            u = torch.minimum(edges[0], edges[1]).detach().cpu().tolist()
+            v = torch.maximum(edges[0], edges[1]).detach().cpu().tolist()
+            s = scores.detach().float().cpu().tolist()
+            for a, b, score in zip(u, v, s):
+                if a == b:
+                    continue
+                pair = int(a) * num_nodes + int(b)
+                score_by_pair[pair] = score_by_pair.get(pair, 0.0) + float(score)
+                count_by_pair[pair] = count_by_pair.get(pair, 0) + 1
+
+        if not score_by_pair:
+            return self._empty_candidates(device)
+
+        pairs_cpu = list(score_by_pair.keys())
+        raw_scores = torch.tensor([score_by_pair[p] for p in pairs_cpu],
+                                  dtype=torch.float, device=device)
+        mn, mx = raw_scores.min(), raw_scores.max()
+        if (mx - mn).abs() > 1e-12:
+            norm_scores = (raw_scores - mn) / (mx - mn)
+        else:
+            norm_scores = torch.ones_like(raw_scores)
+
+        counts = torch.tensor([count_by_pair[p] for p in pairs_cpu],
+                              dtype=torch.float, device=device)
+        if self.cand_label_mode == 'hard':
+            targets = (norm_scores >= self.cand_hard_threshold).float()
+        elif self.cand_label_mode == 'consensus':
+            targets = (counts >= 2).float()
+        else:
+            targets = norm_scores.clamp(0.0, 1.0)
+
+        order = torch.argsort(norm_scores, descending=True).detach().cpu().tolist()
+        node_counts = [0] * num_nodes
+        keep = []
+        for idx in order:
+            pair = pairs_cpu[idx]
+            u, v = divmod(pair, num_nodes)
+            if node_counts[u] >= final_k or node_counts[v] >= final_k:
+                continue
+            keep.append(idx)
+            node_counts[u] += 1
+            node_counts[v] += 1
+
+        if not keep:
+            return self._empty_candidates(device)
+        keep_t = torch.tensor(keep, dtype=torch.long, device=device)
+        pair_t = torch.tensor([pairs_cpu[i] for i in keep], dtype=torch.long, device=device)
+        edges = torch.stack([pair_t // num_nodes, pair_t % num_nodes], dim=0)
+        return edges, targets[keep_t], norm_scores[keep_t]
+
+    @torch.no_grad()
+    def generate_candidate_edges(self, z, upper_edges, num_nodes, x=None,
+                                 edge_index=None, intent_vector=None,
+                                 rec_head=None):
+        if self.num_cand_per_node <= 0 or num_nodes <= 1 or not self.cand_sources:
+            return self._empty_candidates(z.device)
+
+        k = self._source_k(num_nodes)
+        candidate_items = []
+        sources = set(self.cand_sources)
+
+        if 'embed' in sources:
+            candidate_items.append(self._similarity_candidates(z, upper_edges, num_nodes, k))
+        if 'semantic' in sources:
+            feat = x if x is not None else z
+            candidate_items.append(self._similarity_candidates(feat, upper_edges, num_nodes, k))
+        if 'twohop' in sources:
+            candidate_items.append(self._twohop_candidates(upper_edges, num_nodes, k, binary_score=True))
+        if 'common' in sources:
+            candidate_items.append(self._twohop_candidates(upper_edges, num_nodes, k, binary_score=False))
+
+        if 'intent' in sources and rec_head is not None and intent_vector is not None:
+            pool_edges = self._merge_candidates(candidate_items, num_nodes, z.device)[0]
+            if pool_edges.numel() == 0:
+                pool_edges = self._similarity_candidates(
+                    z, upper_edges, num_nodes, max(k, self.num_cand_per_node * 4))[0]
+            if pool_edges.numel() > 0:
+                intent_scores = torch.sigmoid(rec_head(z, pool_edges, intent_vector).squeeze(-1))
+                candidate_items.append((pool_edges, intent_scores.detach()))
+
+        return self._merge_candidates(candidate_items, num_nodes, z.device)
 
     def refresh_candidate_edges(self, x, edge_index, edge_weight, intent_vector):
-        """手动刷新候选新边缓存(用当前嵌入重新选一批)。"""
+        """Refresh cached candidate missing edges with the current encoder state."""
         z = self.encoder(x, edge_index, edge_weight, intent_vector)
         upper_edges = self.filter_upper_edges(edge_index)
-        self._cand_edges = self.generate_candidate_edges(z, upper_edges, x.size(0))
+        edges, targets, scores = self.generate_candidate_edges(
+            z, upper_edges, x.size(0), x=x, edge_index=edge_index,
+            intent_vector=intent_vector, rec_head=self.edge_model_rec)
+        self._cand_edges = edges
+        self._cand_targets = targets
+        self._cand_scores = scores
 
     def forward(self, x, edge_index, edge_weight, intent_vector):
         z = self.encoder(x, edge_index, edge_weight, intent_vector)
@@ -192,13 +335,22 @@ class IntentGuidedAdversarialModel(nn.Module):
 
         # 首次调用时生成候选新边并缓存, 后续复用(周期性刷新由外部调 refresh_candidate_edges)
         if self._cand_edges is None:
-            self._cand_edges = self.generate_candidate_edges(z, upper_edges, x.size(0))
+            edges, targets, scores = self.generate_candidate_edges(
+                z, upper_edges, x.size(0), x=x, edge_index=edge_index,
+                intent_vector=intent_vector, rec_head=self.edge_model_rec)
+            self._cand_edges = edges
+            self._cand_targets = targets
+            self._cand_scores = scores
 
         cand_edges = self._cand_edges
+        cand_targets = self._cand_targets
+        cand_scores = self._cand_scores
         if cand_edges.size(1) > 0:
             cand_edge_logits = self.edge_model_rec(z, cand_edges, intent_vector)
         else:
             cand_edge_logits = z.new_zeros((0, 1))
+            cand_targets = z.new_zeros(0)
+            cand_scores = z.new_zeros(0)
 
         return {
             'upper_edge_logits': upper_edge_logits,
@@ -207,10 +359,12 @@ class IntentGuidedAdversarialModel(nn.Module):
             'lower_edge_fea': lower_edge_fea,
             'cand_edges': cand_edges,
             'cand_edge_logits': cand_edge_logits,
+            'cand_edge_targets': cand_targets,
+            'cand_edge_scores': cand_scores,
         }
 
     def _edge_info_one(self, z, edge_index, intent_vector, adv_head, rec_head,
-                       cand_slot_idx):
+                       cand_slot_idx, x=None):
         """对单条关系的节点表示 z 生成 adv/rec/cand 边信息 dict。
 
         z 用该关系自己的 HII-GNN 嵌入, 保证 PAP 候选边用 PAP 表示打分,
@@ -226,13 +380,21 @@ class IntentGuidedAdversarialModel(nn.Module):
         lower_edge_fea = torch.cat([z[lower_edges[0]], z[lower_edges[1]]], dim=1)
 
         if self._cand_edges[cand_slot_idx] is None:
-            self._cand_edges[cand_slot_idx] = self.generate_candidate_edges(
-                z, upper_edges, z.size(0))
+            edges, targets, scores = self.generate_candidate_edges(
+                z, upper_edges, z.size(0), x=x, edge_index=edge_index,
+                intent_vector=intent_vector, rec_head=rec_head)
+            self._cand_edges[cand_slot_idx] = edges
+            self._cand_targets[cand_slot_idx] = targets
+            self._cand_scores[cand_slot_idx] = scores
         cand_edges = self._cand_edges[cand_slot_idx]
+        cand_targets = self._cand_targets[cand_slot_idx]
+        cand_scores = self._cand_scores[cand_slot_idx]
         if cand_edges.size(1) > 0:
             cand_edge_logits = rec_head(z, cand_edges, intent_vector)
         else:
             cand_edge_logits = z.new_zeros((0, 1))
+            cand_targets = z.new_zeros(0)
+            cand_scores = z.new_zeros(0)
 
         return {
             'upper_edge_logits': upper_edge_logits,
@@ -241,6 +403,8 @@ class IntentGuidedAdversarialModel(nn.Module):
             'lower_edge_fea': lower_edge_fea,
             'cand_edges': cand_edges,
             'cand_edge_logits': cand_edge_logits,
+            'cand_edge_targets': cand_targets,
+            'cand_edge_scores': cand_scores,
         }
 
     def forward_multi(self, x, edge_index_list, edge_weight_list, intent_vector):
@@ -254,7 +418,7 @@ class IntentGuidedAdversarialModel(nn.Module):
         for r in range(self.num_relations):
             infos.append(self._edge_info_one(
                 zs[r], edge_index_list[r], intent_vector,
-                self.edge_model_adv[r], self.edge_model_rec[r], r))
+                self.edge_model_adv[r], self.edge_model_rec[r], r, x=x))
         return infos
 
     def refresh_candidate_edges_multi(self, x, edge_index_list,
@@ -264,8 +428,12 @@ class IntentGuidedAdversarialModel(nn.Module):
             x, edge_index_list, edge_weight_list, intent_vector)
         for r in range(self.num_relations):
             upper = self.filter_upper_edges(edge_index_list[r])
-            self._cand_edges[r] = self.generate_candidate_edges(
-                zs[r], upper, x.size(0))
+            edges, targets, scores = self.generate_candidate_edges(
+                zs[r], upper, x.size(0), x=x, edge_index=edge_index_list[r],
+                intent_vector=intent_vector, rec_head=self.edge_model_rec[r])
+            self._cand_edges[r] = edges
+            self._cand_targets[r] = targets
+            self._cand_scores[r] = scores
 
 
 class IntentContrastiveModel(nn.Module):
@@ -373,6 +541,14 @@ class IntentContrastiveModel(nn.Module):
         p_rec = F.softmax(sr @ sr.t() / self.tau, dim=-1)
         return F.kl_div(p_adv, p_rec, reduction='batchmean')
 
+    def candidate_reconstruction_bce_loss(self, cand_logits, cand_targets):
+        if cand_logits is None or cand_targets is None or cand_logits.numel() == 0:
+            device = self.fc1.weight.device
+            return torch.tensor(0.0, device=device)
+        logits = cand_logits.squeeze(-1)
+        targets = cand_targets.to(logits.device).float().view_as(logits)
+        return F.binary_cross_entropy_with_logits(logits, targets)
+
     def intent_guided_qc_loss(self, z, q_idx, intent_batch, pos_idx, neg_idx,
                               gate=True, tau_gate=0.2):
         """意图引导的查询中心对比 (IGQC): 自监督抬高 oracle 排序天花板。
@@ -415,7 +591,8 @@ class IntentContrastiveModel(nn.Module):
     def total_loss(self, z_adv, z_rec, intent_vector, reg_loss,
                    reg_lambda=0.5, adv_lambda=1.0, edge_fea_adv=None,
                    edge_fea_rec=None, suspicious_idx=None, lambda_rec=0.1,
-                   igqc_args=None, lambda_igqc=0.0):
+                   igqc_args=None, lambda_igqc=0.0, cand_rec_args=None,
+                   lambda_cand_bce=0.0):
         """
         总损失 = L_contrastive + λ_intent * L_intent + λ_adv * L_edge
                  - λ_reg * L_reg + λ_rec * L_reconstruction
@@ -447,11 +624,24 @@ class IntentContrastiveModel(nn.Module):
             l_igqc = self.intent_guided_qc_loss(**igqc_args)
             loss = loss + lambda_igqc * l_igqc
 
+        l_cand_bce = torch.tensor(0.0, device=z_adv.device)
+        num_cand_edges = 0
+        if lambda_cand_bce > 0 and cand_rec_args is not None:
+            cand_logits = cand_rec_args.get('logits')
+            cand_targets = cand_rec_args.get('targets')
+            if cand_logits is not None:
+                num_cand_edges = int(cand_logits.numel())
+            l_cand_bce = self.candidate_reconstruction_bce_loss(
+                cand_logits, cand_targets)
+            loss = loss + lambda_cand_bce * l_cand_bce
+
         return loss, {
             'contrastive': l_contrastive.item(),
             'intent': l_intent.item(),
             'reg': reg_loss.item(),
             'reconstruction': l_rec.item(),
+            'cand_bce': l_cand_bce.item(),
+            'num_cand_edges': num_cand_edges,
             'igqc': l_igqc.item(),
             'total': loss.item(),
         }
