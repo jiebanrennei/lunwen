@@ -453,10 +453,16 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
 
 
 def _best_community_for_w(node_order, cum_sims, avg, w,
-                          patience=0, min_gain_tol=0.0):
+                          patience=0, min_gain_tol=0.0,
+                          select_mode='first_drop'):
     """在一条扩展轨迹上, 对给定 w 找密度峰值, 返回对应社区 set。"""
     sizes = np.arange(1, len(cum_sims) + 1, dtype=np.float64)
     densities = (cum_sims - sizes * avg) / (sizes ** w)
+    select_mode = str(select_mode).lower()
+    if select_mode == 'global':
+        best_idx = int(np.argmax(densities))
+        return set(node_order[:best_idx + 1])
+
     patience = max(0, int(patience))
     min_gain_tol = max(0.0, float(min_gain_tol))
     best_idx = 0
@@ -483,7 +489,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             node_boost=None, boost_factor=1.5, queries=None,
                             greedy_patience=0, greedy_min_gain_tol=0.0,
                             frontier_batch_size=1, include_query_in_pred=False,
-                            greedy_connectivity_boost=0.0):
+                            greedy_connectivity_boost=0.0,
+                            greedy_select_mode='first_drop'):
     """
     贪心 + 密度自适应的社区搜索评估。
 
@@ -542,7 +549,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             comm = _best_community_for_w(
                 node_order, cum_sims, avg, w,
                 patience=greedy_patience,
-                min_gain_tol=greedy_min_gain_tol)
+                min_gain_tol=greedy_min_gain_tol,
+                select_mode=greedy_select_mode)
             pred = set(comm)
             if not include_query_in_pred:
                 pred.discard(int(q))
@@ -827,7 +835,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      intent_proj_fn=None, intent_rerank_alpha=0.0,
                                      greedy_patience=0, greedy_min_gain_tol=0.0,
                                      frontier_batch_size=1, include_query_in_pred=False,
-                                     greedy_connectivity_boost=0.0):
+                                     greedy_connectivity_boost=0.0,
+                                     greedy_select_mode='first_drop'):
     """
     动态意图 + 贪心扩展社区搜索。
     每个查询节点生成意图→重新编码→贪心扩展。
@@ -887,7 +896,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             comm = _best_community_for_w(
                 node_order, cum_sims, avg, w,
                 patience=greedy_patience,
-                min_gain_tol=greedy_min_gain_tol)
+                min_gain_tol=greedy_min_gain_tol,
+                select_mode=greedy_select_mode)
             pred = set(comm)
             if not include_query_in_pred:
                 pred.discard(int(q))

@@ -349,6 +349,9 @@ if __name__ == '__main__':
                         help='Greedy CS top-b frontier expansion size; 1 keeps old behavior')
     parser.add_argument('--greedy_connectivity_boost', type=float, default=0.0,
                         help='Optional frontier connectivity boost during greedy expansion; 0 disables')
+    parser.add_argument('--greedy_select_mode', type=str, default='first_drop',
+                        choices=['first_drop', 'global'],
+                        help='Greedy CS density selection mode')
     parser.add_argument('--include_query_in_pred', action='store_true',
                         help='Include query node in both predicted and truth communities during greedy CS evaluation')
     parser.add_argument('--eval_perturb_mode', type=str, default='none',
@@ -384,6 +387,7 @@ if __name__ == '__main__':
           f"greedy_min_gain_tol={args.greedy_min_gain_tol} "
           f"frontier_batch_size={args.frontier_batch_size} "
           f"greedy_connectivity_boost={args.greedy_connectivity_boost} "
+          f"greedy_select_mode={args.greedy_select_mode} "
           f"include_query_in_pred={args.include_query_in_pred} "
           f"eval_perturb={args.eval_perturb_mode}:{args.eval_perturb_rate} "
           f"seed={args.seed}")
@@ -917,7 +921,8 @@ if __name__ == '__main__':
             greedy_min_gain_tol=args.greedy_min_gain_tol,
             frontier_batch_size=args.frontier_batch_size,
             include_query_in_pred=args.include_query_in_pred,
-            greedy_connectivity_boost=args.greedy_connectivity_boost
+            greedy_connectivity_boost=args.greedy_connectivity_boost,
+            greedy_select_mode=args.greedy_select_mode
         )
     else:
         cs_results = community_search(emb, data, topk=cs_topk,
@@ -935,7 +940,8 @@ if __name__ == '__main__':
                                             greedy_min_gain_tol=args.greedy_min_gain_tol,
                                             frontier_batch_size=args.frontier_batch_size,
                                             include_query_in_pred=args.include_query_in_pred,
-                                            greedy_connectivity_boost=args.greedy_connectivity_boost)
+                                            greedy_connectivity_boost=args.greedy_connectivity_boost,
+                                            greedy_select_mode=args.greedy_select_mode)
 
     # Actor-Critic 社区搜索评测 (启用时)
     cs_rl = None
