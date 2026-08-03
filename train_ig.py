@@ -341,6 +341,16 @@ if __name__ == '__main__':
                         help='Comma-separated greedy community-search w values')
     parser.add_argument('--compute_structure_metrics', action='store_true',
                         help='Compute density/conductance/diameter in greedy CS')
+    parser.add_argument('--greedy_patience', type=int, default=0,
+                        help='Greedy CS density-stop patience; 0 keeps old first-drop behavior')
+    parser.add_argument('--greedy_min_gain_tol', type=float, default=0.0,
+                        help='Greedy CS density-drop tolerance; 0 keeps old behavior')
+    parser.add_argument('--frontier_batch_size', type=int, default=1,
+                        help='Greedy CS top-b frontier expansion size; 1 keeps old behavior')
+    parser.add_argument('--greedy_connectivity_boost', type=float, default=0.0,
+                        help='Optional frontier connectivity boost during greedy expansion; 0 disables')
+    parser.add_argument('--include_query_in_pred', action='store_true',
+                        help='Include query node in both predicted and truth communities during greedy CS evaluation')
     parser.add_argument('--eval_perturb_mode', type=str, default='none',
                         choices=['none', 'drop', 'add', 'rewire'],
                         help='Evaluation-only graph perturbation mode')
@@ -370,6 +380,11 @@ if __name__ == '__main__':
           f"cand_label_mode={args.cand_label_mode} "
           f"lambda_cand_bce={effective_lambda_cand_bce} "
           f"cs_topk={cs_topk} cs_w_list={cs_w_list} "
+          f"greedy_patience={args.greedy_patience} "
+          f"greedy_min_gain_tol={args.greedy_min_gain_tol} "
+          f"frontier_batch_size={args.frontier_batch_size} "
+          f"greedy_connectivity_boost={args.greedy_connectivity_boost} "
+          f"include_query_in_pred={args.include_query_in_pred} "
           f"eval_perturb={args.eval_perturb_mode}:{args.eval_perturb_rate} "
           f"seed={args.seed}")
 
@@ -897,7 +912,12 @@ if __name__ == '__main__':
             node_boost=node_boost_eval, boost_factor=args.suspicious_boost,
             queries=fixed_queries, edge_index=ei_arg,
             intent_proj_fn=contrastive_model.intent_proj,
-            intent_rerank_alpha=args.intent_rerank_alpha
+            intent_rerank_alpha=args.intent_rerank_alpha,
+            greedy_patience=args.greedy_patience,
+            greedy_min_gain_tol=args.greedy_min_gain_tol,
+            frontier_batch_size=args.frontier_batch_size,
+            include_query_in_pred=args.include_query_in_pred,
+            greedy_connectivity_boost=args.greedy_connectivity_boost
         )
     else:
         cs_results = community_search(emb, data, topk=cs_topk,
@@ -910,7 +930,12 @@ if __name__ == '__main__':
                                             compute_structure=args.compute_structure_metrics,
                                             node_boost=node_boost_eval,
                                             boost_factor=args.suspicious_boost,
-                                            queries=fixed_queries)
+                                            queries=fixed_queries,
+                                            greedy_patience=args.greedy_patience,
+                                            greedy_min_gain_tol=args.greedy_min_gain_tol,
+                                            frontier_batch_size=args.frontier_batch_size,
+                                            include_query_in_pred=args.include_query_in_pred,
+                                            greedy_connectivity_boost=args.greedy_connectivity_boost)
 
     # Actor-Critic 社区搜索评测 (启用时)
     cs_rl = None

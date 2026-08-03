@@ -396,59 +396,94 @@ def _greedy_one(q, sims_q, avg, adj, w, max_iter):
     return best_comm
 
 
-def _greedy_expand_trace(q, sims_q, adj, max_iter):
+def _greedy_expand_trace(q, sims_q, adj, max_iter,
+                         frontier_batch_size=1, connectivity_boost=0.0):
     """
-    单次贪心扩展: 不断加入 frontier 里 sim 最高的邻居, 记录每步的累计 sim 和。
-    返回 (node_order, cum_sims): node_order[i] 为第 i 步加入的节点,
-    cum_sims[i] 为前 i+1 个节点的 sim 总和。不做任何 break-on-density,
-    一路扩到 frontier 空或 max_iter。
+    单次贪心扩展: 从 frontier 中按相似度/结构连接度选择节点, 记录累计 sim 和。
     """
     q = int(q)
+    frontier_batch_size = max(1, int(frontier_batch_size))
+    connectivity_boost = max(0.0, float(connectivity_boost))
     visited = {q}
     frontier = set(adj[q]) - visited
     cur_sum = float(sims_q[q])
 
     node_order = [q]
     cum_sims = [cur_sum]
+    added = 0
 
-    for _ in range(max_iter):
-        if not frontier:
-            break
+    while added < max_iter and frontier:
         cand_arr = np.array(list(frontier))
-        scores = sims_q[cand_arr]
-        best_node = int(cand_arr[np.argmax(scores)])
+        scores = sims_q[cand_arr].astype(np.float64, copy=True)
 
-        visited.add(best_node)
-        frontier.discard(best_node)
-        cur_sum += float(sims_q[best_node])
-        frontier.update(adj[best_node] - visited)
+        if connectivity_boost > 0:
+            conn = np.array([
+                len(adj[int(c)] & visited) / max(1, len(adj[int(c)]))
+                for c in cand_arr
+            ], dtype=np.float64)
+            span = float(conn.max() - conn.min()) if conn.size > 0 else 0.0
+            if span > 1e-12:
+                conn = (conn - conn.min()) / span
+            scores = scores + connectivity_boost * conn
 
-        node_order.append(best_node)
-        cum_sims.append(cur_sum)
+        take = min(frontier_batch_size, len(cand_arr), max_iter - added)
+        if take <= 0:
+            break
+        if take == 1:
+            chosen = [int(cand_arr[np.argmax(scores)])]
+        else:
+            chosen_idx = np.argpartition(-scores, take - 1)[:take]
+            chosen_idx = chosen_idx[np.argsort(-scores[chosen_idx])]
+            chosen = [int(cand_arr[i]) for i in chosen_idx]
+
+        for node in chosen:
+            if node in visited:
+                continue
+            visited.add(node)
+            frontier.discard(node)
+            cur_sum += float(sims_q[node])
+            frontier.update(adj[node] - visited)
+            node_order.append(node)
+            cum_sims.append(cur_sum)
+            added += 1
+            if added >= max_iter:
+                break
 
     return node_order, np.array(cum_sims, dtype=np.float64)
 
 
-def _best_community_for_w(node_order, cum_sims, avg, w):
+def _best_community_for_w(node_order, cum_sims, avg, w,
+                          patience=0, min_gain_tol=0.0):
     """在一条扩展轨迹上, 对给定 w 找密度峰值, 返回对应社区 set。"""
     sizes = np.arange(1, len(cum_sims) + 1, dtype=np.float64)
     densities = (cum_sims - sizes * avg) / (sizes ** w)
-    # 找密度首次下降的位置(贪心 break), 或取全局最大
+    patience = max(0, int(patience))
+    min_gain_tol = max(0.0, float(min_gain_tol))
     best_idx = 0
     best_d = densities[0]
+    bad_steps = 0
     for i in range(1, len(densities)):
-        if densities[i] > best_d:
-            best_d = densities[i]
+        d = densities[i]
+        if d > best_d:
+            best_d = d
             best_idx = i
+            bad_steps = 0
+        elif min_gain_tol > 0 and best_d - d <= min_gain_tol:
+            continue
         else:
-            break
+            bad_steps += 1
+            if bad_steps > patience:
+                break
     return set(node_order[:best_idx + 1])
 
 
 def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             num_queries=None, seed=0, max_iter=10000,
                             compute_structure=False,
-                            node_boost=None, boost_factor=1.5, queries=None):
+                            node_boost=None, boost_factor=1.5, queries=None,
+                            greedy_patience=0, greedy_min_gain_tol=0.0,
+                            frontier_batch_size=1, include_query_in_pred=False,
+                            greedy_connectivity_boost=0.0):
     """
     贪心 + 密度自适应的社区搜索评估。
 
@@ -489,7 +524,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
 
     for q in queries:
         truth = label_sets[y[q]].copy()
-        truth.discard(int(q))
+        if not include_query_in_pred:
+            truth.discard(int(q))
         if len(truth) == 0:
             continue
 
@@ -497,12 +533,19 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
         avg = float(sims_q.mean())
 
         # 只扩展一次
-        node_order, cum_sims = _greedy_expand_trace(q, sims_q, adj, max_iter)
+        node_order, cum_sims = _greedy_expand_trace(
+            q, sims_q, adj, max_iter,
+            frontier_batch_size=frontier_batch_size,
+            connectivity_boost=greedy_connectivity_boost)
 
         for w in w_list:
-            comm = _best_community_for_w(node_order, cum_sims, avg, w)
+            comm = _best_community_for_w(
+                node_order, cum_sims, avg, w,
+                patience=greedy_patience,
+                min_gain_tol=greedy_min_gain_tol)
             pred = set(comm)
-            pred.discard(int(q))
+            if not include_query_in_pred:
+                pred.discard(int(q))
 
             inter = len(pred & truth)
             union = len(pred | truth)
@@ -781,7 +824,10 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      compute_structure=False,
                                      node_boost=None, boost_factor=1.5, queries=None,
                                      edge_index=None,
-                                     intent_proj_fn=None, intent_rerank_alpha=0.0):
+                                     intent_proj_fn=None, intent_rerank_alpha=0.0,
+                                     greedy_patience=0, greedy_min_gain_tol=0.0,
+                                     frontier_batch_size=1, include_query_in_pred=False,
+                                     greedy_connectivity_boost=0.0):
     """
     动态意图 + 贪心扩展社区搜索。
     每个查询节点生成意图→重新编码→贪心扩展。
@@ -811,7 +857,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
 
     for q in queries:
         truth = label_sets[y[q]].copy()
-        truth.discard(int(q))
+        if not include_query_in_pred:
+            truth.discard(int(q))
         if len(truth) == 0:
             continue
 
@@ -831,12 +878,19 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             sims_q = sims_q * mult
 
         avg = float(sims_q.mean())
-        node_order, cum_sims = _greedy_expand_trace(q, sims_q, adj, max_iter)
+        node_order, cum_sims = _greedy_expand_trace(
+            q, sims_q, adj, max_iter,
+            frontier_batch_size=frontier_batch_size,
+            connectivity_boost=greedy_connectivity_boost)
 
         for w in w_list:
-            comm = _best_community_for_w(node_order, cum_sims, avg, w)
+            comm = _best_community_for_w(
+                node_order, cum_sims, avg, w,
+                patience=greedy_patience,
+                min_gain_tol=greedy_min_gain_tol)
             pred = set(comm)
-            pred.discard(int(q))
+            if not include_query_in_pred:
+                pred.discard(int(q))
 
             inter = len(pred & truth)
             union = len(pred | truth)
