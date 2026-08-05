@@ -588,10 +588,40 @@ class IntentContrastiveModel(nn.Module):
 
         return (w * per_pos).sum(dim=1).mean()
 
+    def intent_conditioned_spnm_loss(self, z, q_idx, intent_batch,
+                                     pos_idx, neg_idx, pos_weight=None,
+                                     neg_weight=None, tau_gate=0.2):
+        zc = F.normalize(z, dim=-1)
+        zq = zc[q_idx]
+        zpos = zc[pos_idx]
+        zneg = zc[neg_idx]
+
+        pos_sim = torch.einsum('bh,bmh->bm', zq, zpos) / self.tau
+        neg_sim = torch.einsum('bh,bnh->bn', zq, zneg) / self.tau
+        if neg_weight is not None:
+            nw = neg_weight.to(neg_sim.device).float().clamp_min(1e-8)
+            neg_sim = neg_sim + torch.log(nw)
+
+        neg_lse = torch.logsumexp(neg_sim, dim=1, keepdim=True)
+        denom = torch.logaddexp(pos_sim, neg_lse.expand_as(pos_sim))
+        per_pos = denom - pos_sim
+
+        if pos_weight is not None:
+            w = pos_weight.to(per_pos.device).float()
+            w = w / w.sum(dim=1, keepdim=True).clamp_min(1e-8)
+        else:
+            ip = F.normalize(self.intent_proj(zpos), dim=-1)
+            iq = F.normalize(intent_batch, dim=-1).unsqueeze(1)
+            gate_sim = (ip * iq).sum(dim=-1) / tau_gate
+            w = torch.softmax(gate_sim, dim=1)
+
+        return (w * per_pos).sum(dim=1).mean()
+
     def total_loss(self, z_adv, z_rec, intent_vector, reg_loss,
                    reg_lambda=0.5, adv_lambda=1.0, edge_fea_adv=None,
                    edge_fea_rec=None, suspicious_idx=None, lambda_rec=0.1,
-                   igqc_args=None, lambda_igqc=0.0, cand_rec_args=None,
+                   igqc_args=None, lambda_igqc=0.0, ic_spnm_args=None,
+                   lambda_ic_spnm=0.0, cand_rec_args=None,
                    lambda_cand_bce=0.0):
         """
         总损失 = L_contrastive + λ_intent * L_intent + λ_adv * L_edge
@@ -624,6 +654,11 @@ class IntentContrastiveModel(nn.Module):
             l_igqc = self.intent_guided_qc_loss(**igqc_args)
             loss = loss + lambda_igqc * l_igqc
 
+        l_ic_spnm = torch.tensor(0.0, device=z_adv.device)
+        if lambda_ic_spnm > 0 and ic_spnm_args is not None:
+            l_ic_spnm = self.intent_conditioned_spnm_loss(**ic_spnm_args)
+            loss = loss + lambda_ic_spnm * l_ic_spnm
+
         l_cand_bce = torch.tensor(0.0, device=z_adv.device)
         num_cand_edges = 0
         if lambda_cand_bce > 0 and cand_rec_args is not None:
@@ -643,6 +678,7 @@ class IntentContrastiveModel(nn.Module):
             'cand_bce': l_cand_bce.item(),
             'num_cand_edges': num_cand_edges,
             'igqc': l_igqc.item(),
+            'ic_spnm': l_ic_spnm.item(),
             'total': loss.item(),
         }
 

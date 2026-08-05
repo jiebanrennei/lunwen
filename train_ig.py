@@ -203,6 +203,129 @@ def perturb_edge_index(edge_index, num_nodes, mode='none', rate=0.0, seed=0):
     return torch.cat([kept, rev], dim=1).to(device)
 
 
+def build_ic_spnm_args(z_rec, data, q_epoch, intent_vector, intent_generator,
+                       contrastive_model, qc_adj, node_score, args, rng_q):
+    if qc_adj is None or args.lambda_ic_spnm <= 0:
+        return None, None
+
+    N = data.num_nodes
+    dev = data.x.device
+    B = max(1, int(args.ic_spnm_num_queries))
+    m = max(1, int(args.ic_spnm_pos))
+    n = max(1, int(args.ic_spnm_neg))
+    hard_pool = max(n, int(args.ic_spnm_hard_pool))
+
+    with torch.no_grad():
+        z_norm = F.normalize(z_rec.detach(), dim=-1)
+        z_align = F.normalize(contrastive_model.intent_proj(z_rec.detach()), dim=-1)
+        susp = None
+        if (node_score is not None and args.ic_spnm_suspicious_alpha > 0
+                and not args.no_ic_spnm_suspicious):
+            susp = node_score.detach().float()
+            susp = (susp - susp.min()) / (susp.max() - susp.min() + 1e-8)
+
+    q_first = int(q_epoch) if intent_generator is not None else int(
+        torch.randint(0, N, (1,), generator=rng_q).item())
+    extra = torch.randint(0, N, (max(0, B - 1),), generator=rng_q).tolist()
+    q_list = [q_first] + extra
+
+    pos_rows, neg_rows, pos_weight_rows, neg_weight_rows = [], [], [], []
+    valid_q, intent_list = [], []
+    pos_align_stats, neg_sim_stats = [], []
+    neg_intent_stats, neg_struct_stats = [], []
+
+    for qi in q_list:
+        qi = int(qi)
+        nbrs = list(qc_adj[qi])
+        if len(nbrs) == 0:
+            continue
+
+        if intent_generator is not None:
+            iq = intent_generator(data.x[qi])
+        else:
+            iq = intent_vector
+        with torch.no_grad():
+            iq_n = F.normalize(iq.detach(), dim=-1)
+            nbr_t = torch.tensor(nbrs, device=dev)
+            pos_score = z_align[nbr_t] @ iq_n
+            if susp is not None:
+                pos_score = pos_score + args.ic_spnm_suspicious_alpha * susp[nbr_t]
+            k_pos = min(m, len(nbrs))
+            pos_rank = torch.topk(pos_score, k_pos).indices
+            pos_sel = nbr_t[pos_rank]
+            pos_scores = pos_score[pos_rank]
+            if k_pos < m:
+                pad_idx = torch.randint(0, k_pos, (m - k_pos,), generator=rng_q).to(dev)
+                pos_sel = torch.cat([pos_sel, pos_sel[pad_idx]], dim=0)
+                pos_scores = torch.cat([pos_scores, pos_scores[pad_idx]], dim=0)
+            pos_weight = torch.softmax(pos_scores / args.ic_spnm_tau_gate, dim=0)
+
+            excluded = set(nbrs)
+            excluded.add(qi)
+            allowed = np.array([i for i in range(N) if i not in excluded], dtype=np.int64)
+            if allowed.size == 0:
+                continue
+            pool_size = min(hard_pool, allowed.size)
+            pool_np = np.random.choice(allowed, size=pool_size, replace=False)
+            pool_t = torch.tensor(pool_np, device=dev)
+
+            emb_sim = z_norm[pool_t] @ z_norm[qi]
+            neg_intent = z_align[pool_t] @ iq_n
+            q_nbrs = qc_adj[qi]
+            cn_scores = []
+            q_den = len(q_nbrs) + 1
+            for cand in pool_np.tolist():
+                c_nbrs = qc_adj[int(cand)]
+                cn = len(q_nbrs & c_nbrs) / np.sqrt(q_den * (len(c_nbrs) + 1))
+                cn_scores.append(cn)
+            cn_t = torch.tensor(cn_scores, dtype=torch.float, device=dev)
+
+            neg_score = (emb_sim
+                         - args.ic_spnm_intent_beta * neg_intent
+                         - args.ic_spnm_struct_beta * cn_t)
+            k_neg = min(n, pool_size)
+            neg_rank = torch.topk(neg_score, k_neg).indices
+            neg_sel = pool_t[neg_rank]
+            neg_w = torch.ones(k_neg, device=dev)
+            if k_neg < n:
+                pad_idx = torch.randint(0, k_neg, (n - k_neg,), generator=rng_q).to(dev)
+                neg_sel = torch.cat([neg_sel, neg_sel[pad_idx]], dim=0)
+                neg_w = torch.cat([neg_w, neg_w[pad_idx]], dim=0)
+
+        pos_rows.append(pos_sel.cpu().numpy())
+        neg_rows.append(neg_sel.cpu().numpy())
+        pos_weight_rows.append(pos_weight.detach())
+        neg_weight_rows.append(neg_w.detach())
+        valid_q.append(qi)
+        intent_list.append(iq)
+        pos_align_stats.append(float(pos_scores.mean().item()))
+        neg_sim_stats.append(float(emb_sim[neg_rank].mean().item()))
+        neg_intent_stats.append(float(neg_intent[neg_rank].mean().item()))
+        neg_struct_stats.append(float(cn_t[neg_rank].mean().item()))
+
+    if not valid_q:
+        return None, None
+
+    ic_spnm_args = dict(
+        z=z_rec,
+        q_idx=torch.tensor(valid_q, device=dev),
+        intent_batch=torch.stack(intent_list),
+        pos_idx=torch.tensor(np.stack(pos_rows), device=dev),
+        neg_idx=torch.tensor(np.stack(neg_rows), device=dev),
+        pos_weight=torch.stack(pos_weight_rows).to(dev),
+        neg_weight=torch.stack(neg_weight_rows).to(dev),
+        tau_gate=args.ic_spnm_tau_gate,
+    )
+    stats = {
+        'valid_q': len(valid_q),
+        'pos_align': float(np.mean(pos_align_stats)),
+        'neg_sim': float(np.mean(neg_sim_stats)),
+        'neg_intent': float(np.mean(neg_intent_stats)),
+        'neg_struct': float(np.mean(neg_struct_stats)),
+    }
+    return ic_spnm_args, stats
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='cora_lcc')
@@ -324,6 +447,26 @@ if __name__ == '__main__':
     parser.add_argument('--no_igqc_intent_gate', dest='igqc_intent_gate',
                         action='store_false',
                         help='关意图门控=纯结构查询对比(消融对照)')
+    parser.add_argument('--lambda_ic_spnm', type=float, default=0.0,
+                        help='IC-SPNM loss weight; 0=off by default')
+    parser.add_argument('--ic_spnm_pos', type=int, default=20,
+                        help='IC-SPNM positives per query from CS graph neighbors')
+    parser.add_argument('--ic_spnm_neg', type=int, default=256,
+                        help='IC-SPNM hard negatives per query')
+    parser.add_argument('--ic_spnm_num_queries', type=int, default=8,
+                        help='IC-SPNM sampled query nodes per epoch')
+    parser.add_argument('--ic_spnm_hard_pool', type=int, default=2048,
+                        help='Candidate pool size for hard-negative mining')
+    parser.add_argument('--ic_spnm_tau_gate', type=float, default=0.2,
+                        help='Temperature for IC-SPNM positive weighting')
+    parser.add_argument('--ic_spnm_intent_beta', type=float, default=1.0,
+                        help='Penalty for intent-aligned hard negatives')
+    parser.add_argument('--ic_spnm_struct_beta', type=float, default=0.5,
+                        help='Penalty for structurally aligned hard negatives')
+    parser.add_argument('--ic_spnm_suspicious_alpha', type=float, default=0.0,
+                        help='Positive score boost from suspicious node score; 0 disables')
+    parser.add_argument('--no_ic_spnm_suspicious', action='store_true',
+                        help='Disable suspicious-score term in IC-SPNM positive mining')
     parser.add_argument('--intent_rerank_alpha', type=float, default=0.0,
                         help='推理阶段意图 rerank 系数; 0=关(默认), 实验设 0.1~0.3')
     parser.add_argument('--no_intent_loss', action='store_true',
@@ -382,6 +525,10 @@ if __name__ == '__main__':
           f"num_cand_per_node={effective_num_cand_per_node} "
           f"cand_label_mode={args.cand_label_mode} "
           f"lambda_cand_bce={effective_lambda_cand_bce} "
+          f"lambda_ic_spnm={args.lambda_ic_spnm} "
+          f"ic_spnm_pos={args.ic_spnm_pos} "
+          f"ic_spnm_neg={args.ic_spnm_neg} "
+          f"ic_spnm_hard_pool={args.ic_spnm_hard_pool} "
           f"cs_topk={cs_topk} cs_w_list={cs_w_list} "
           f"greedy_patience={args.greedy_patience} "
           f"greedy_min_gain_tol={args.greedy_min_gain_tol} "
@@ -650,13 +797,21 @@ if __name__ == '__main__':
 
     # ========== 训练 (Min-Max) ==========
     start = t() - train_elapsed_prev    # 续训时把已训耗时算进总时间
-    # 阶段B IGQC: 训练前建全量图邻接表(与 CS 评测同一张图, train/eval 一致)
-    igqc_adj = None
+    # 阶段B: query-centric 结构采样使用与 CS 评测一致的完整图
+    qc_adj = None
+    if args.lambda_igqc > 0 or args.lambda_ic_spnm > 0:
+        qc_adj = _build_adj_list(_cs_edge_index(data), data.num_nodes)
     if args.lambda_igqc > 0:
-        igqc_adj = _build_adj_list(_cs_edge_index(data), data.num_nodes)
         print(f"[IGQC] 全量图邻接表就绪, lambda={args.lambda_igqc}, "
               f"pos={args.igqc_pos} neg={args.igqc_neg} "
               f"B={args.igqc_num_queries} gate={args.igqc_intent_gate}")
+    if args.lambda_ic_spnm > 0:
+        print(f"[IC-SPNM] 全量图邻接表就绪, lambda={args.lambda_ic_spnm}, "
+              f"pos={args.ic_spnm_pos} neg={args.ic_spnm_neg} "
+              f"B={args.ic_spnm_num_queries} pool={args.ic_spnm_hard_pool} "
+              f"intent_beta={args.ic_spnm_intent_beta} "
+              f"struct_beta={args.ic_spnm_struct_beta} "
+              f"susp_alpha={args.ic_spnm_suspicious_alpha}")
 
     prev = t()
     epoch = start_epoch - 1             # 续训跳过循环时兜底: 最后已完成的轮次
@@ -720,7 +875,7 @@ if __name__ == '__main__':
 
         # 阶段B IGQC: 采样查询批, 意图对齐 top-k 正邻居 + 随机负样本, 逐q生成意图
         igqc_args = None
-        if igqc_adj is not None:
+        if qc_adj is not None and args.lambda_igqc > 0:
             B, m, n = args.igqc_num_queries, args.igqc_pos, args.igqc_neg
             N = data.num_nodes
             dev = data.x.device
@@ -734,7 +889,7 @@ if __name__ == '__main__':
                 0, N, (B - 1,), generator=rng_q).tolist()
             pos_rows, neg_rows, valid_q, intent_list = [], [], [], []
             for qi in q_list:
-                nbrs = list(igqc_adj[qi])
+                nbrs = list(qc_adj[qi])
                 if len(nbrs) == 0:
                     continue
                 # 逐q意图(保留梯度以端到端训练生成器)
@@ -767,6 +922,22 @@ if __name__ == '__main__':
                     gate=args.igqc_intent_gate,
                 )
 
+        ic_spnm_args = None
+        ic_spnm_stats = None
+        if qc_adj is not None and args.lambda_ic_spnm > 0:
+            ic_spnm_args, ic_spnm_stats = build_ic_spnm_args(
+                z_rec=z_rec,
+                data=data,
+                q_epoch=q_epoch,
+                intent_vector=intent_vector,
+                intent_generator=intent_generator,
+                contrastive_model=contrastive_model,
+                qc_adj=qc_adj,
+                node_score=node_score,
+                args=args,
+                rng_q=rng_q,
+            )
+
         cand_rec_args = None
         if aux is not None:
             cand_rec_args = {
@@ -781,6 +952,8 @@ if __name__ == '__main__':
             suspicious_idx=(None if args.no_suspicious_kl else susp_idx),
             lambda_rec=effective_lambda_rec,
             igqc_args=igqc_args, lambda_igqc=args.lambda_igqc,
+            ic_spnm_args=ic_spnm_args,
+            lambda_ic_spnm=args.lambda_ic_spnm,
             cand_rec_args=cand_rec_args,
             lambda_cand_bce=effective_lambda_cand_bce
         )
@@ -804,6 +977,12 @@ if __name__ == '__main__':
                f'n_cand={loss_info["num_cand_edges"]}, '
                if effective_lambda_cand_bce > 0 else '')
             + (f'igqc={loss_info["igqc"]:.4f}, ' if args.lambda_igqc > 0 else '')
+            + (f'ic_spnm={loss_info["ic_spnm"]:.4f}, '
+               if args.lambda_ic_spnm > 0 else '')
+            + (f'ic_q={ic_spnm_stats["valid_q"]}, '
+               f'ic_pos={ic_spnm_stats["pos_align"]:.3f}, '
+               f'ic_neg={ic_spnm_stats["neg_sim"]:.3f}, '
+               if args.lambda_ic_spnm > 0 and ic_spnm_stats is not None else '')
             + f'this epoch {now - prev:.4f}, total {now - start:.4f}'
         )
         # 多关系: 周期性打印 ICRA 各关系平均权重, 监控是否塌缩
