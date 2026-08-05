@@ -23,6 +23,7 @@ Options:
   --ac-size-sweep LIST        Actor-critic size sweep list
   --ic-spnm WEIGHT            Enable IC-SPNM with this lambda
   --frontier-ic-spnm WEIGHT   Enable frontier-aware IC-SPNM mix mode
+  --relation-fusion TYPE      Relation fusion type: icra or transformer
   -h, --help                  Show this help
 
 Examples:
@@ -31,6 +32,7 @@ Examples:
   bash run_batch.sh --dry-run -d ACM --rl
   bash run_batch.sh -d IMDB_NEW --rl --ac-size-sweep 200,400,800,1200,1600
   bash run_batch.sh -d ACM --frontier-ic-spnm 0.003
+  bash run_batch.sh -d ACM,DBLP,IMDB_NEW --relation-fusion transformer
   bash run_batch.sh -d DBLP -- --cs_relations apa --cs_w_list 0.10,0.12,0.14,0.16
 EOF
 }
@@ -110,6 +112,11 @@ while [[ $# -gt 0 ]]; do
       add_train_arg "1.5"
       add_train_arg "--ic_spnm_struct_beta"
       add_train_arg "1.0"
+      shift 2
+      ;;
+    --relation-fusion|--relation_fusion)
+      add_train_arg "--relation_fusion"
+      add_train_arg "$2"
       shift 2
       ;;
     -h|--help)
