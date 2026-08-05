@@ -214,6 +214,12 @@ def build_ic_spnm_args(z_rec, data, q_epoch, intent_vector, intent_generator,
     m = max(1, int(args.ic_spnm_pos))
     n = max(1, int(args.ic_spnm_neg))
     hard_pool = max(n, int(args.ic_spnm_hard_pool))
+    pos_mode = getattr(args, 'ic_spnm_pos_mode', 'neighbor')
+    frontier_hops = max(1, int(getattr(args, 'ic_spnm_frontier_hops', 2)))
+    frontier_ratio = min(1.0, max(0.0, float(getattr(args, 'ic_spnm_frontier_ratio', 0.5))))
+    frontier_pool = max(1, int(getattr(args, 'ic_spnm_frontier_pool', 128)))
+    frontier_conn_beta = max(0.0, float(getattr(args, 'ic_spnm_frontier_conn_beta', 0.2)))
+    frontier_min_align = float(getattr(args, 'ic_spnm_frontier_min_align', -1.0))
 
     with torch.no_grad():
         z_norm = F.normalize(z_rec.detach(), dim=-1)
@@ -224,6 +230,83 @@ def build_ic_spnm_args(z_rec, data, q_epoch, intent_vector, intent_generator,
             susp = node_score.detach().float()
             susp = (susp - susp.min()) / (susp.max() - susp.min() + 1e-8)
 
+    def _score_nodes(cands, iq_n, visited=None, frontier_weight=False):
+        if not cands:
+            return [], [], [], []
+        cand_list = list(dict.fromkeys(int(c) for c in cands))
+        cand_t = torch.tensor(cand_list, device=dev)
+        align_t = z_align[cand_t] @ iq_n
+        conn_vals = []
+        if visited is None:
+            conn_vals = [0.0] * len(cand_list)
+        else:
+            for cand in cand_list:
+                c_nbrs = qc_adj[int(cand)]
+                conn_vals.append(len(c_nbrs & visited) / max(1, len(c_nbrs)))
+        conn_t = torch.tensor(conn_vals, dtype=torch.float, device=dev)
+        if frontier_weight:
+            score_t = 0.5 * align_t + frontier_conn_beta * conn_t
+        else:
+            score_t = align_t.clone()
+        if susp is not None:
+            score_t = score_t + args.ic_spnm_suspicious_alpha * susp[cand_t]
+        return cand_list, align_t, conn_t, score_t
+
+    def _top_neighbor_positives(nbrs, iq_n, k):
+        cand_list, align_t, conn_t, score_t = _score_nodes(nbrs, iq_n)
+        if not cand_list or k <= 0:
+            return []
+        top_k = min(k, len(cand_list))
+        rank = torch.topk(score_t, top_k).indices.cpu().tolist()
+        items = []
+        for idx in rank:
+            items.append({
+                'node': cand_list[idx],
+                'align': float(align_t[idx].item()),
+                'conn': float(conn_t[idx].item()),
+                'score': float(score_t[idx].item()),
+                'hop': 1,
+            })
+        return items
+
+    def _frontier_positives(qi, iq_n):
+        visited = {int(qi)}
+        frontier = set(qc_adj[int(qi)])
+        selected = []
+        per_step = max(1, int(np.ceil(frontier_pool / frontier_hops)))
+        for hop in range(1, frontier_hops + 1):
+            cand = [c for c in frontier if c not in visited and c != qi]
+            if len(cand) > frontier_pool:
+                cand = np.random.choice(np.array(cand, dtype=np.int64),
+                                        size=frontier_pool, replace=False).tolist()
+            cand_list, align_t, conn_t, score_t = _score_nodes(
+                cand, iq_n, visited=visited, frontier_weight=True)
+            if not cand_list:
+                break
+            keep = (align_t >= frontier_min_align).nonzero(as_tuple=False).view(-1)
+            if keep.numel() == 0:
+                break
+            top_k = min(per_step, int(keep.numel()))
+            local_rank = torch.topk(score_t[keep], top_k).indices
+            rank = keep[local_rank].cpu().tolist()
+            new_nodes = []
+            for idx in rank:
+                node = cand_list[idx]
+                selected.append({
+                    'node': node,
+                    'align': float(align_t[idx].item()),
+                    'conn': float(conn_t[idx].item()),
+                    'score': float(score_t[idx].item()),
+                    'hop': hop,
+                })
+                new_nodes.append(node)
+            visited.update(new_nodes)
+            next_frontier = set()
+            for node in new_nodes:
+                next_frontier.update(qc_adj[int(node)])
+            frontier = (frontier | next_frontier) - visited
+        return selected[:frontier_pool]
+
     q_first = int(q_epoch) if intent_generator is not None else int(
         torch.randint(0, N, (1,), generator=rng_q).item())
     extra = torch.randint(0, N, (max(0, B - 1),), generator=rng_q).tolist()
@@ -231,12 +314,14 @@ def build_ic_spnm_args(z_rec, data, q_epoch, intent_vector, intent_generator,
 
     pos_rows, neg_rows, pos_weight_rows, neg_weight_rows = [], [], [], []
     valid_q, intent_list = [], []
-    pos_align_stats, neg_sim_stats = [], []
+    pos_align_stats, pos_align_std_stats, neg_sim_stats = [], [], []
     neg_intent_stats, neg_struct_stats = [], []
+    frontier_frac_stats, pos_hop_stats, pos_unique_stats = [], [], []
 
     for qi in q_list:
         qi = int(qi)
         nbrs = list(qc_adj[qi])
+        nbr_set = set(nbrs)
         if len(nbrs) == 0:
             continue
 
@@ -246,21 +331,62 @@ def build_ic_spnm_args(z_rec, data, q_epoch, intent_vector, intent_generator,
             iq = intent_vector
         with torch.no_grad():
             iq_n = F.normalize(iq.detach(), dim=-1)
-            nbr_t = torch.tensor(nbrs, device=dev)
-            pos_score = z_align[nbr_t] @ iq_n
-            if susp is not None:
-                pos_score = pos_score + args.ic_spnm_suspicious_alpha * susp[nbr_t]
-            k_pos = min(m, len(nbrs))
-            pos_rank = torch.topk(pos_score, k_pos).indices
-            pos_sel = nbr_t[pos_rank]
-            pos_scores = pos_score[pos_rank]
-            if k_pos < m:
-                pad_idx = torch.randint(0, k_pos, (m - k_pos,), generator=rng_q).to(dev)
-                pos_sel = torch.cat([pos_sel, pos_sel[pad_idx]], dim=0)
-                pos_scores = torch.cat([pos_scores, pos_scores[pad_idx]], dim=0)
-            pos_weight = torch.softmax(pos_scores / args.ic_spnm_tau_gate, dim=0)
+            if pos_mode == 'neighbor':
+                pos_items = _top_neighbor_positives(nbrs, iq_n, m)
+            else:
+                frontier_items = _frontier_positives(qi, iq_n)
+                boundary_items = [item for item in frontier_items if item['node'] not in nbr_set]
+                first_hop_items = [item for item in frontier_items if item['node'] in nbr_set]
+                if pos_mode == 'mix':
+                    frontier_k = int(round(m * frontier_ratio))
+                    neighbor_k = max(0, m - frontier_k)
+                    pos_items = _top_neighbor_positives(nbrs, iq_n, neighbor_k)
+                    pos_items.extend(boundary_items[:frontier_k])
+                    pos_items.extend(first_hop_items[:max(0, m - len(pos_items))])
+                else:
+                    pos_items = boundary_items[:m]
+                    pos_items.extend(first_hop_items[:max(0, m - len(pos_items))])
+                if len(pos_items) == 0:
+                    pos_items = _top_neighbor_positives(nbrs, iq_n, m)
+
+            dedup, seen = [], set()
+            for item in pos_items:
+                node = int(item['node'])
+                if node == qi or node in seen:
+                    continue
+                seen.add(node)
+                dedup.append(item)
+                if len(dedup) >= m:
+                    break
+            if len(dedup) == 0:
+                continue
+            unique_count = len(dedup)
+            if len(dedup) < m:
+                pad_idx = torch.randint(0, len(dedup), (m - len(dedup),), generator=rng_q).tolist()
+                dedup.extend([dedup[i].copy() for i in pad_idx])
+
+            pos_ids = [int(item['node']) for item in dedup[:m]]
+            pos_align = torch.tensor([item['align'] for item in dedup[:m]],
+                                     dtype=torch.float, device=dev)
+            pos_hops = torch.tensor([item['hop'] for item in dedup[:m]],
+                                    dtype=torch.float, device=dev)
+            if pos_mode == 'neighbor':
+                pos_weight_score = torch.tensor([item['score'] for item in dedup[:m]],
+                                                dtype=torch.float, device=dev)
+                pos_weight = torch.softmax(pos_weight_score / args.ic_spnm_tau_gate, dim=0)
+            else:
+                pos_weight_score = torch.tensor([
+                    0.5 * item['align'] + frontier_conn_beta * item['conn']
+                    + (args.ic_spnm_suspicious_alpha * float(susp[item['node']].item())
+                       if susp is not None else 0.0)
+                    for item in dedup[:m]
+                ], dtype=torch.float, device=dev)
+                pos_weight = torch.softmax(
+                    pos_weight_score / max(float(args.ic_spnm_tau_gate), 0.5), dim=0)
+            pos_sel = torch.tensor(pos_ids, device=dev)
 
             excluded = set(nbrs)
+            excluded.update(pos_ids)
             excluded.add(qi)
             allowed = np.array([i for i in range(N) if i not in excluded], dtype=np.int64)
             if allowed.size == 0:
@@ -298,10 +424,14 @@ def build_ic_spnm_args(z_rec, data, q_epoch, intent_vector, intent_generator,
         neg_weight_rows.append(neg_w.detach())
         valid_q.append(qi)
         intent_list.append(iq)
-        pos_align_stats.append(float(pos_scores.mean().item()))
+        pos_align_stats.append(float(pos_align.mean().item()))
+        pos_align_std_stats.append(float(pos_align.std(unbiased=False).item()))
         neg_sim_stats.append(float(emb_sim[neg_rank].mean().item()))
         neg_intent_stats.append(float(neg_intent[neg_rank].mean().item()))
         neg_struct_stats.append(float(cn_t[neg_rank].mean().item()))
+        frontier_frac_stats.append(float(np.mean([node not in nbr_set for node in pos_ids])))
+        pos_hop_stats.append(float(pos_hops.mean().item()))
+        pos_unique_stats.append(float(unique_count))
 
     if not valid_q:
         return None, None
@@ -319,9 +449,13 @@ def build_ic_spnm_args(z_rec, data, q_epoch, intent_vector, intent_generator,
     stats = {
         'valid_q': len(valid_q),
         'pos_align': float(np.mean(pos_align_stats)),
+        'pos_align_std': float(np.mean(pos_align_std_stats)),
         'neg_sim': float(np.mean(neg_sim_stats)),
         'neg_intent': float(np.mean(neg_intent_stats)),
         'neg_struct': float(np.mean(neg_struct_stats)),
+        'frontier_frac': float(np.mean(frontier_frac_stats)),
+        'pos_hop': float(np.mean(pos_hop_stats)),
+        'pos_unique': float(np.mean(pos_unique_stats)),
     }
     return ic_spnm_args, stats
 
@@ -467,6 +601,19 @@ if __name__ == '__main__':
                         help='Positive score boost from suspicious node score; 0 disables')
     parser.add_argument('--no_ic_spnm_suspicious', action='store_true',
                         help='Disable suspicious-score term in IC-SPNM positive mining')
+    parser.add_argument('--ic_spnm_pos_mode', type=str, default='neighbor',
+                        choices=['neighbor', 'frontier', 'mix'],
+                        help='IC-SPNM positive mining mode: old neighbors, frontier positives, or mixed')
+    parser.add_argument('--ic_spnm_frontier_hops', type=int, default=2,
+                        help='Expansion steps for frontier-aware IC-SPNM positives')
+    parser.add_argument('--ic_spnm_frontier_ratio', type=float, default=0.5,
+                        help='Fraction of positives reserved for frontier nodes in mix mode')
+    parser.add_argument('--ic_spnm_frontier_pool', type=int, default=128,
+                        help='Max frontier candidates kept per query during IC-SPNM mining')
+    parser.add_argument('--ic_spnm_frontier_conn_beta', type=float, default=0.2,
+                        help='Connectivity reward for frontier-aware IC-SPNM positives')
+    parser.add_argument('--ic_spnm_frontier_min_align', type=float, default=-1.0,
+                        help='Minimum intent alignment for frontier-aware IC-SPNM positives')
     parser.add_argument('--intent_rerank_alpha', type=float, default=0.0,
                         help='推理阶段意图 rerank 系数; 0=关(默认), 实验设 0.1~0.3')
     parser.add_argument('--no_intent_loss', action='store_true',
@@ -529,6 +676,9 @@ if __name__ == '__main__':
           f"ic_spnm_pos={args.ic_spnm_pos} "
           f"ic_spnm_neg={args.ic_spnm_neg} "
           f"ic_spnm_hard_pool={args.ic_spnm_hard_pool} "
+          f"ic_spnm_pos_mode={args.ic_spnm_pos_mode} "
+          f"ic_spnm_frontier_ratio={args.ic_spnm_frontier_ratio} "
+          f"ic_spnm_frontier_hops={args.ic_spnm_frontier_hops} "
           f"cs_topk={cs_topk} cs_w_list={cs_w_list} "
           f"greedy_patience={args.greedy_patience} "
           f"greedy_min_gain_tol={args.greedy_min_gain_tol} "
@@ -809,6 +959,10 @@ if __name__ == '__main__':
         print(f"[IC-SPNM] 全量图邻接表就绪, lambda={args.lambda_ic_spnm}, "
               f"pos={args.ic_spnm_pos} neg={args.ic_spnm_neg} "
               f"B={args.ic_spnm_num_queries} pool={args.ic_spnm_hard_pool} "
+              f"pos_mode={args.ic_spnm_pos_mode} "
+              f"frontier_ratio={args.ic_spnm_frontier_ratio} "
+              f"frontier_hops={args.ic_spnm_frontier_hops} "
+              f"frontier_pool={args.ic_spnm_frontier_pool} "
               f"intent_beta={args.ic_spnm_intent_beta} "
               f"struct_beta={args.ic_spnm_struct_beta} "
               f"susp_alpha={args.ic_spnm_suspicious_alpha}")
@@ -982,6 +1136,10 @@ if __name__ == '__main__':
             + (f'ic_q={ic_spnm_stats["valid_q"]}, '
                f'ic_pos={ic_spnm_stats["pos_align"]:.3f}, '
                f'ic_neg={ic_spnm_stats["neg_sim"]:.3f}, '
+               f'ic_frontier={ic_spnm_stats["frontier_frac"]:.2f}, '
+               f'ic_hop={ic_spnm_stats["pos_hop"]:.2f}, '
+               f'ic_pos_std={ic_spnm_stats["pos_align_std"]:.3f}, '
+               f'ic_uniq={ic_spnm_stats["pos_unique"]:.1f}, '
                if args.lambda_ic_spnm > 0 and ic_spnm_stats is not None else '')
             + f'this epoch {now - prev:.4f}, total {now - start:.4f}'
         )
