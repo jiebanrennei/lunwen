@@ -460,6 +460,198 @@ def build_ic_spnm_args(z_rec, data, q_epoch, intent_vector, intent_generator,
     return ic_spnm_args, stats
 
 
+def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
+                     contrastive_model, qc_adj, node_score, args, rng_q):
+    if qc_adj is None or args.lambda_ilssc <= 0:
+        return None, None
+
+    N = data.num_nodes
+    dev = data.x.device
+    B = max(1, int(args.ilssc_num_queries))
+    S = max(1, int(args.ilssc_seed_size))
+    K = max(1, int(args.ilssc_neg))
+    hops = max(1, int(args.ilssc_hops))
+    frontier_pool = max(1, int(args.ilssc_frontier_pool))
+    hard_pool = max(K, int(getattr(args, 'ic_spnm_hard_pool', 2048)))
+    min_align = float(args.ilssc_min_align)
+    tau_gate = max(1e-6, float(args.ilssc_tau_gate))
+
+    with torch.no_grad():
+        z_norm = F.normalize(z_rec.detach(), dim=-1)
+        z_align = F.normalize(contrastive_model.intent_proj(z_rec.detach()), dim=-1)
+
+    def _score_seed_candidates(cands, qi, iq_n, visited):
+        cand_list = list(dict.fromkeys(int(c) for c in cands
+                                       if int(c) != int(qi) and int(c) not in visited))
+        if not cand_list:
+            return [], None, None, None, None
+        cand_t = torch.tensor(cand_list, device=dev)
+        align_t = z_align[cand_t] @ iq_n
+        sim_t = z_norm[cand_t] @ z_norm[int(qi)]
+        conn_vals = []
+        for cand in cand_list:
+            c_nbrs = qc_adj[int(cand)]
+            conn_vals.append(len(c_nbrs & visited) / max(1, len(c_nbrs)))
+        conn_t = torch.tensor(conn_vals, dtype=torch.float, device=dev)
+        score_t = (align_t
+                   + args.ilssc_sim_beta * sim_t
+                   + args.ilssc_conn_beta * conn_t)
+        return cand_list, align_t, sim_t, conn_t, score_t
+
+    def _mine_seed(qi, iq_n):
+        visited = {int(qi)}
+        frontier = set(qc_adj[int(qi)])
+        selected = []
+        for hop in range(1, hops + 1):
+            if len(selected) >= S or not frontier:
+                break
+            cand = [c for c in frontier if c not in visited and c != qi]
+            if len(cand) > frontier_pool:
+                cand = np.random.choice(np.array(cand, dtype=np.int64),
+                                        size=frontier_pool, replace=False).tolist()
+            cand_list, align_t, sim_t, conn_t, score_t = _score_seed_candidates(
+                cand, qi, iq_n, visited)
+            if not cand_list:
+                break
+            keep = (align_t >= min_align).nonzero(as_tuple=False).view(-1)
+            if keep.numel() == 0:
+                break
+            take = min(S - len(selected), int(keep.numel()))
+            rank = keep[torch.topk(score_t[keep], take).indices].cpu().tolist()
+            new_nodes = []
+            for idx in rank:
+                node = int(cand_list[idx])
+                selected.append({
+                    'node': node,
+                    'align': float(align_t[idx].item()),
+                    'sim': float(sim_t[idx].item()),
+                    'conn': float(conn_t[idx].item()),
+                    'score': float(score_t[idx].item()),
+                    'hop': hop,
+                })
+                new_nodes.append(node)
+            visited.update(new_nodes)
+            next_frontier = set()
+            for node in new_nodes:
+                next_frontier.update(qc_adj[int(node)])
+            frontier = (frontier | next_frontier) - visited
+        return selected
+
+    q_first = int(q_epoch) if intent_generator is not None else int(
+        torch.randint(0, N, (1,), generator=rng_q).item())
+    extra = torch.randint(0, N, (max(0, B - 1),), generator=rng_q).tolist()
+    q_list = [q_first] + extra
+
+    seed_rows, neg_rows, seed_weight_rows = [], [], []
+    valid_q, intent_list = [], []
+    seed_align_stats, seed_sim_stats, seed_conn_stats = [], [], []
+    seed_unique_stats, neg_sim_stats = [], []
+
+    for qi in q_list:
+        qi = int(qi)
+        if len(qc_adj[qi]) == 0:
+            continue
+        if intent_generator is not None:
+            iq = intent_generator(data.x[qi])
+        else:
+            iq = intent_vector
+
+        with torch.no_grad():
+            iq_n = F.normalize(iq.detach(), dim=-1)
+            seed_items = _mine_seed(qi, iq_n)
+            if len(seed_items) == 0:
+                cand_list, align_t, sim_t, conn_t, score_t = _score_seed_candidates(
+                    qc_adj[qi], qi, iq_n, {qi})
+                if not cand_list:
+                    continue
+                take = min(S, len(cand_list))
+                rank = torch.topk(score_t, take).indices.cpu().tolist()
+                seed_items = [{
+                    'node': int(cand_list[idx]),
+                    'align': float(align_t[idx].item()),
+                    'sim': float(sim_t[idx].item()),
+                    'conn': float(conn_t[idx].item()),
+                    'score': float(score_t[idx].item()),
+                    'hop': 1,
+                } for idx in rank]
+            if len(seed_items) == 0:
+                continue
+            unique_count = len({int(item['node']) for item in seed_items})
+            if len(seed_items) < S:
+                pad_idx = torch.randint(0, len(seed_items), (S - len(seed_items),),
+                                        generator=rng_q).tolist()
+                seed_items.extend([seed_items[i].copy() for i in pad_idx])
+            seed_items = seed_items[:S]
+            seed_ids = [int(item['node']) for item in seed_items]
+            seed_score = torch.tensor([item['score'] for item in seed_items],
+                                      dtype=torch.float, device=dev)
+            seed_weight = torch.softmax(seed_score / tau_gate, dim=0)
+
+            excluded = set(seed_ids)
+            excluded.update(qc_adj[qi])
+            excluded.add(qi)
+            allowed = np.array([i for i in range(N) if i not in excluded], dtype=np.int64)
+            if allowed.size == 0:
+                allowed = np.array([i for i in range(N) if i != qi and i not in set(seed_ids)],
+                                   dtype=np.int64)
+            if allowed.size == 0:
+                continue
+            pool_size = min(hard_pool, allowed.size)
+            pool_np = np.random.choice(allowed, size=pool_size, replace=False)
+            pool_t = torch.tensor(pool_np, device=dev)
+            emb_sim = z_norm[pool_t] @ z_norm[qi]
+            neg_intent = z_align[pool_t] @ iq_n
+            seed_set = set(seed_ids)
+            struct_scores = []
+            for cand in pool_np.tolist():
+                c_nbrs = qc_adj[int(cand)]
+                struct_scores.append(len(c_nbrs & seed_set) / max(1, len(c_nbrs)))
+            struct_t = torch.tensor(struct_scores, dtype=torch.float, device=dev)
+            neg_score = (emb_sim
+                         - args.ilssc_intent_beta * neg_intent
+                         - args.ilssc_struct_beta * struct_t)
+            k_neg = min(K, pool_size)
+            neg_rank = torch.topk(neg_score, k_neg).indices
+            neg_sel = pool_t[neg_rank]
+            if k_neg < K:
+                pad_idx = torch.randint(0, k_neg, (K - k_neg,), generator=rng_q).to(dev)
+                neg_sel = torch.cat([neg_sel, neg_sel[pad_idx]], dim=0)
+
+        seed_rows.append(np.array(seed_ids, dtype=np.int64))
+        neg_rows.append(neg_sel.cpu().numpy())
+        seed_weight_rows.append(seed_weight.detach())
+        valid_q.append(qi)
+        intent_list.append(iq)
+        seed_align_stats.append(float(np.mean([item['align'] for item in seed_items])))
+        seed_sim_stats.append(float(np.mean([item['sim'] for item in seed_items])))
+        seed_conn_stats.append(float(np.mean([item['conn'] for item in seed_items])))
+        seed_unique_stats.append(float(unique_count))
+        neg_sim_stats.append(float(emb_sim[neg_rank].mean().item()))
+
+    if not valid_q:
+        return None, None
+
+    ilssc_args = dict(
+        z=z_rec,
+        q_idx=torch.tensor(valid_q, device=dev),
+        intent_batch=torch.stack(intent_list),
+        seed_idx=torch.tensor(np.stack(seed_rows), device=dev),
+        neg_idx=torch.tensor(np.stack(neg_rows), device=dev),
+        seed_weight=torch.stack(seed_weight_rows).to(dev),
+        proto_alpha=args.ilssc_proto_alpha,
+        tau_gate=args.ilssc_tau_gate,
+    )
+    stats = {
+        'valid_q': len(valid_q),
+        'seed_align': float(np.mean(seed_align_stats)),
+        'seed_sim': float(np.mean(seed_sim_stats)),
+        'seed_conn': float(np.mean(seed_conn_stats)),
+        'seed_unique': float(np.mean(seed_unique_stats)),
+        'neg_sim': float(np.mean(neg_sim_stats)),
+    }
+    return ilssc_args, stats
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='cora_lcc')
@@ -617,6 +809,32 @@ if __name__ == '__main__':
                         help='Connectivity reward for frontier-aware IC-SPNM positives')
     parser.add_argument('--ic_spnm_frontier_min_align', type=float, default=-1.0,
                         help='Minimum intent alignment for frontier-aware IC-SPNM positives')
+    parser.add_argument('--lambda_ilssc', type=float, default=0.0,
+                        help='ILSSC loss weight; 0=off by default')
+    parser.add_argument('--ilssc_seed_size', type=int, default=8,
+                        help='ILSSC connected local seed nodes per query')
+    parser.add_argument('--ilssc_neg', type=int, default=256,
+                        help='ILSSC hard negatives per query')
+    parser.add_argument('--ilssc_num_queries', type=int, default=8,
+                        help='ILSSC sampled query nodes per epoch')
+    parser.add_argument('--ilssc_hops', type=int, default=2,
+                        help='ILSSC local seed expansion hops')
+    parser.add_argument('--ilssc_frontier_pool', type=int, default=128,
+                        help='Max frontier candidates scored during ILSSC seed mining')
+    parser.add_argument('--ilssc_conn_beta', type=float, default=0.3,
+                        help='Connectivity reward for ILSSC seed mining')
+    parser.add_argument('--ilssc_sim_beta', type=float, default=0.5,
+                        help='Embedding similarity reward for ILSSC seed mining')
+    parser.add_argument('--ilssc_intent_beta', type=float, default=1.0,
+                        help='Penalty for intent-aligned ILSSC hard negatives')
+    parser.add_argument('--ilssc_struct_beta', type=float, default=0.5,
+                        help='Penalty for structurally close ILSSC hard negatives')
+    parser.add_argument('--ilssc_proto_alpha', type=float, default=0.5,
+                        help='Weight of ILSSC seed-prototype contrast term')
+    parser.add_argument('--ilssc_tau_gate', type=float, default=0.2,
+                        help='Temperature for ILSSC seed weighting')
+    parser.add_argument('--ilssc_min_align', type=float, default=-1.0,
+                        help='Minimum intent alignment for ILSSC seed candidates')
     parser.add_argument('--intent_rerank_alpha', type=float, default=0.0,
                         help='推理阶段意图 rerank 系数; 0=关(默认), 实验设 0.1~0.3')
     parser.add_argument('--no_intent_loss', action='store_true',
@@ -645,6 +863,14 @@ if __name__ == '__main__':
     parser.add_argument('--greedy_select_mode', type=str, default='first_drop',
                         choices=['first_drop', 'global'],
                         help='Greedy CS density selection mode')
+    parser.add_argument('--greedy_init_seed_size', type=int, default=1,
+                        help='Initial connected seed size for greedy CS; 1 keeps old behavior')
+    parser.add_argument('--greedy_init_seed_hops', type=int, default=1,
+                        help='Max hops used to form initial greedy seed')
+    parser.add_argument('--greedy_init_seed_conn_beta', type=float, default=0.3,
+                        help='Connectivity reward for initial greedy seed')
+    parser.add_argument('--greedy_init_seed_min_sim', type=float, default=None,
+                        help='Minimum similarity for initial greedy seed candidates')
     parser.add_argument('--include_query_in_pred', action='store_true',
                         help='Include query node in both predicted and truth communities during greedy CS evaluation')
     parser.add_argument('--eval_perturb_mode', type=str, default='none',
@@ -682,6 +908,10 @@ if __name__ == '__main__':
           f"ic_spnm_pos_mode={args.ic_spnm_pos_mode} "
           f"ic_spnm_frontier_ratio={args.ic_spnm_frontier_ratio} "
           f"ic_spnm_frontier_hops={args.ic_spnm_frontier_hops} "
+          f"lambda_ilssc={args.lambda_ilssc} "
+          f"ilssc_seed_size={args.ilssc_seed_size} "
+          f"ilssc_neg={args.ilssc_neg} "
+          f"ilssc_hops={args.ilssc_hops} "
           f"relation_fusion={args.relation_fusion} "
           f"cs_topk={cs_topk} cs_w_list={cs_w_list} "
           f"greedy_patience={args.greedy_patience} "
@@ -689,6 +919,9 @@ if __name__ == '__main__':
           f"frontier_batch_size={args.frontier_batch_size} "
           f"greedy_connectivity_boost={args.greedy_connectivity_boost} "
           f"greedy_select_mode={args.greedy_select_mode} "
+          f"greedy_init_seed_size={args.greedy_init_seed_size} "
+          f"greedy_init_seed_hops={args.greedy_init_seed_hops} "
+          f"greedy_init_seed_conn_beta={args.greedy_init_seed_conn_beta} "
           f"include_query_in_pred={args.include_query_in_pred} "
           f"eval_perturb={args.eval_perturb_mode}:{args.eval_perturb_rate} "
           f"seed={args.seed}")
@@ -953,7 +1186,7 @@ if __name__ == '__main__':
     start = t() - train_elapsed_prev    # 续训时把已训耗时算进总时间
     # 阶段B: query-centric 结构采样使用与 CS 评测一致的完整图
     qc_adj = None
-    if args.lambda_igqc > 0 or args.lambda_ic_spnm > 0:
+    if args.lambda_igqc > 0 or args.lambda_ic_spnm > 0 or args.lambda_ilssc > 0:
         qc_adj = _build_adj_list(_cs_edge_index(data), data.num_nodes)
     if args.lambda_igqc > 0:
         print(f"[IGQC] 全量图邻接表就绪, lambda={args.lambda_igqc}, "
@@ -970,6 +1203,14 @@ if __name__ == '__main__':
               f"intent_beta={args.ic_spnm_intent_beta} "
               f"struct_beta={args.ic_spnm_struct_beta} "
               f"susp_alpha={args.ic_spnm_suspicious_alpha}")
+    if args.lambda_ilssc > 0:
+        print(f"[ILSSC] 全量图邻接表就绪, lambda={args.lambda_ilssc}, "
+              f"seed={args.ilssc_seed_size} neg={args.ilssc_neg} "
+              f"B={args.ilssc_num_queries} hops={args.ilssc_hops} "
+              f"frontier_pool={args.ilssc_frontier_pool} "
+              f"conn_beta={args.ilssc_conn_beta} "
+              f"sim_beta={args.ilssc_sim_beta} "
+              f"proto_alpha={args.ilssc_proto_alpha}")
 
     prev = t()
     epoch = start_epoch - 1             # 续训跳过循环时兜底: 最后已完成的轮次
@@ -1086,7 +1327,23 @@ if __name__ == '__main__':
             ic_spnm_args, ic_spnm_stats = build_ic_spnm_args(
                 z_rec=z_rec,
                 data=data,
-                q_epoch=q_epoch,
+                q_epoch=(q_epoch if intent_generator is not None else 0),
+                intent_vector=intent_vector,
+                intent_generator=intent_generator,
+                contrastive_model=contrastive_model,
+                qc_adj=qc_adj,
+                node_score=node_score,
+                args=args,
+                rng_q=rng_q,
+            )
+
+        ilssc_args = None
+        ilssc_stats = None
+        if qc_adj is not None and args.lambda_ilssc > 0:
+            ilssc_args, ilssc_stats = build_ilssc_args(
+                z_rec=z_rec,
+                data=data,
+                q_epoch=(q_epoch if intent_generator is not None else 0),
                 intent_vector=intent_vector,
                 intent_generator=intent_generator,
                 contrastive_model=contrastive_model,
@@ -1112,6 +1369,8 @@ if __name__ == '__main__':
             igqc_args=igqc_args, lambda_igqc=args.lambda_igqc,
             ic_spnm_args=ic_spnm_args,
             lambda_ic_spnm=args.lambda_ic_spnm,
+            ilssc_args=ilssc_args,
+            lambda_ilssc=args.lambda_ilssc,
             cand_rec_args=cand_rec_args,
             lambda_cand_bce=effective_lambda_cand_bce
         )
@@ -1145,6 +1404,15 @@ if __name__ == '__main__':
                f'ic_pos_std={ic_spnm_stats["pos_align_std"]:.3f}, '
                f'ic_uniq={ic_spnm_stats["pos_unique"]:.1f}, '
                if args.lambda_ic_spnm > 0 and ic_spnm_stats is not None else '')
+            + (f'ilssc={loss_info["ilssc"]:.4f}, '
+               if args.lambda_ilssc > 0 else '')
+            + (f'il_q={ilssc_stats["valid_q"]}, '
+               f'il_seed={ilssc_stats["seed_align"]:.3f}, '
+               f'il_sim={ilssc_stats["seed_sim"]:.3f}, '
+               f'il_conn={ilssc_stats["seed_conn"]:.3f}, '
+               f'il_uniq={ilssc_stats["seed_unique"]:.1f}, '
+               f'il_neg={ilssc_stats["neg_sim"]:.3f}, '
+               if args.lambda_ilssc > 0 and ilssc_stats is not None else '')
             + f'this epoch {now - prev:.4f}, total {now - start:.4f}'
         )
         # 多关系: 周期性打印 ICRA 各关系平均权重, 监控是否塌缩
@@ -1263,7 +1531,11 @@ if __name__ == '__main__':
             frontier_batch_size=args.frontier_batch_size,
             include_query_in_pred=args.include_query_in_pred,
             greedy_connectivity_boost=args.greedy_connectivity_boost,
-            greedy_select_mode=args.greedy_select_mode
+            greedy_select_mode=args.greedy_select_mode,
+            greedy_init_seed_size=args.greedy_init_seed_size,
+            greedy_init_seed_hops=args.greedy_init_seed_hops,
+            greedy_init_seed_conn_beta=args.greedy_init_seed_conn_beta,
+            greedy_init_seed_min_sim=args.greedy_init_seed_min_sim
         )
     else:
         cs_results = community_search(emb, data, topk=cs_topk,
@@ -1282,7 +1554,11 @@ if __name__ == '__main__':
                                             frontier_batch_size=args.frontier_batch_size,
                                             include_query_in_pred=args.include_query_in_pred,
                                             greedy_connectivity_boost=args.greedy_connectivity_boost,
-                                            greedy_select_mode=args.greedy_select_mode)
+                                            greedy_select_mode=args.greedy_select_mode,
+                                            greedy_init_seed_size=args.greedy_init_seed_size,
+                                            greedy_init_seed_hops=args.greedy_init_seed_hops,
+                                            greedy_init_seed_conn_beta=args.greedy_init_seed_conn_beta,
+                                            greedy_init_seed_min_sim=args.greedy_init_seed_min_sim)
 
     # Actor-Critic 社区搜索评测 (启用时)
     cs_rl = None

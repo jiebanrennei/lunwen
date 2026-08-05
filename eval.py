@@ -397,13 +397,19 @@ def _greedy_one(q, sims_q, avg, adj, w, max_iter):
 
 
 def _greedy_expand_trace(q, sims_q, adj, max_iter,
-                         frontier_batch_size=1, connectivity_boost=0.0):
+                         frontier_batch_size=1, connectivity_boost=0.0,
+                         init_seed_size=1, init_seed_hops=1,
+                         init_seed_conn_beta=0.3,
+                         init_seed_min_sim=None):
     """
     单次贪心扩展: 从 frontier 中按相似度/结构连接度选择节点, 记录累计 sim 和。
     """
     q = int(q)
     frontier_batch_size = max(1, int(frontier_batch_size))
     connectivity_boost = max(0.0, float(connectivity_boost))
+    init_seed_size = max(1, int(init_seed_size))
+    init_seed_hops = max(1, int(init_seed_hops))
+    init_seed_conn_beta = max(0.0, float(init_seed_conn_beta))
     visited = {q}
     frontier = set(adj[q]) - visited
     cur_sum = float(sims_q[q])
@@ -411,6 +417,50 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     node_order = [q]
     cum_sims = [cur_sum]
     added = 0
+
+    if init_seed_size > 1:
+        seed_target = min(init_seed_size - 1, max_iter)
+        for _ in range(init_seed_hops):
+            if added >= seed_target or not frontier:
+                break
+            cand_arr = np.array(list(frontier))
+            scores = sims_q[cand_arr].astype(np.float64, copy=True)
+            if init_seed_min_sim is not None:
+                keep = scores >= float(init_seed_min_sim)
+                cand_arr = cand_arr[keep]
+                scores = scores[keep]
+                if cand_arr.size == 0:
+                    break
+            if init_seed_conn_beta > 0:
+                conn = np.array([
+                    len(adj[int(c)] & visited) / max(1, len(adj[int(c)]))
+                    for c in cand_arr
+                ], dtype=np.float64)
+                scores = scores + init_seed_conn_beta * conn
+            take = min(seed_target - added, cand_arr.size)
+            if take <= 0:
+                break
+            if take == 1:
+                chosen = [int(cand_arr[np.argmax(scores)])]
+            else:
+                chosen_idx = np.argpartition(-scores, take - 1)[:take]
+                chosen_idx = chosen_idx[np.argsort(-scores[chosen_idx])]
+                chosen = [int(cand_arr[i]) for i in chosen_idx]
+            new_nodes = []
+            for node in chosen:
+                if node in visited:
+                    continue
+                visited.add(node)
+                frontier.discard(node)
+                cur_sum += float(sims_q[node])
+                node_order.append(node)
+                cum_sims.append(cur_sum)
+                added += 1
+                new_nodes.append(node)
+                if added >= seed_target:
+                    break
+            for node in new_nodes:
+                frontier.update(adj[node] - visited)
 
     while added < max_iter and frontier:
         cand_arr = np.array(list(frontier))
@@ -490,7 +540,11 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             greedy_patience=0, greedy_min_gain_tol=0.0,
                             frontier_batch_size=1, include_query_in_pred=False,
                             greedy_connectivity_boost=0.0,
-                            greedy_select_mode='first_drop'):
+                            greedy_select_mode='first_drop',
+                            greedy_init_seed_size=1,
+                            greedy_init_seed_hops=1,
+                            greedy_init_seed_conn_beta=0.3,
+                            greedy_init_seed_min_sim=None):
     """
     贪心 + 密度自适应的社区搜索评估。
 
@@ -543,7 +597,11 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
         node_order, cum_sims = _greedy_expand_trace(
             q, sims_q, adj, max_iter,
             frontier_batch_size=frontier_batch_size,
-            connectivity_boost=greedy_connectivity_boost)
+            connectivity_boost=greedy_connectivity_boost,
+            init_seed_size=greedy_init_seed_size,
+            init_seed_hops=greedy_init_seed_hops,
+            init_seed_conn_beta=greedy_init_seed_conn_beta,
+            init_seed_min_sim=greedy_init_seed_min_sim)
 
         for w in w_list:
             comm = _best_community_for_w(
@@ -836,7 +894,11 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      greedy_patience=0, greedy_min_gain_tol=0.0,
                                      frontier_batch_size=1, include_query_in_pred=False,
                                      greedy_connectivity_boost=0.0,
-                                     greedy_select_mode='first_drop'):
+                                     greedy_select_mode='first_drop',
+                                     greedy_init_seed_size=1,
+                                     greedy_init_seed_hops=1,
+                                     greedy_init_seed_conn_beta=0.3,
+                                     greedy_init_seed_min_sim=None):
     """
     动态意图 + 贪心扩展社区搜索。
     每个查询节点生成意图→重新编码→贪心扩展。
@@ -890,7 +952,11 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
         node_order, cum_sims = _greedy_expand_trace(
             q, sims_q, adj, max_iter,
             frontier_batch_size=frontier_batch_size,
-            connectivity_boost=greedy_connectivity_boost)
+            connectivity_boost=greedy_connectivity_boost,
+            init_seed_size=greedy_init_seed_size,
+            init_seed_hops=greedy_init_seed_hops,
+            init_seed_conn_beta=greedy_init_seed_conn_beta,
+            init_seed_min_sim=greedy_init_seed_min_sim)
 
         for w in w_list:
             comm = _best_community_for_w(

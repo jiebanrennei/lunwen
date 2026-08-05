@@ -4,6 +4,7 @@ set -euo pipefail
 CONFIG="batch_datasets.json"
 DATASETS=""
 DRY_RUN=0
+RUN_NAME=""
 AC_EPOCHS="100"
 AC_SIZE_SWEEP="200,400,600,800,1000,1200,1400"
 TRAIN_ARGS=()
@@ -18,6 +19,7 @@ Options:
   -d, --datasets LIST         Comma-separated datasets, e.g. ACM,DBLP,IMDB_NEW
   -e, --epochs N              Override --num_epochs
   --dry-run                   Print commands without running training
+  --run-name NAME             Batch log directory name prefix under batch_runs/
   --rl                        Enable actor-critic search
   --ac-epochs N               Actor-critic epochs. Default: 100
   --ac-size-sweep LIST        Actor-critic size sweep list
@@ -33,6 +35,7 @@ Examples:
   bash run_batch.sh -d IMDB_NEW --rl --ac-size-sweep 200,400,800,1200,1600
   bash run_batch.sh -d ACM --frontier-ic-spnm 0.003
   bash run_batch.sh -d ACM,DBLP,IMDB_NEW --relation-fusion transformer
+  bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW -- --lambda_ilssc 0.1 --greedy_init_seed_size 4
   bash run_batch.sh -d DBLP -- --cs_relations apa --cs_w_list 0.10,0.12,0.14,0.16
 EOF
 }
@@ -59,6 +62,10 @@ while [[ $# -gt 0 ]]; do
     --dry-run|--dry_run)
       DRY_RUN=1
       shift
+      ;;
+    --run-name|--run_name|--name)
+      RUN_NAME="$2"
+      shift 2
       ;;
     --rl)
       add_train_arg "--use_actor_critic"
@@ -154,6 +161,9 @@ if [[ -n "${DATASETS}" ]]; then
 fi
 if [[ "${DRY_RUN}" == "1" ]]; then
   CMD+=(--dry_run)
+fi
+if [[ -n "${RUN_NAME}" ]]; then
+  CMD+=(--run_name "${RUN_NAME}")
 fi
 CMD+=("${TRAIN_ARGS[@]}")
 

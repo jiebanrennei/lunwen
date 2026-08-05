@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -31,12 +32,20 @@ def _dataset_enabled(name, selected):
     return not selected or name in selected
 
 
+def _safe_run_name(name):
+    name = (name or "batch").strip()
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "_", name)
+    return name.strip("._-") or "batch"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run train_ig.py for datasets defined in a JSON config.")
     parser.add_argument("--config", default="batch_datasets.json", help="Path to batch config JSON")
     parser.add_argument("--datasets", default=None,
                         help="Comma-separated dataset names to run; default runs all configured datasets")
     parser.add_argument("--dry_run", action="store_true", help="Print commands without executing them")
+    parser.add_argument("--run_name", default=None,
+                        help="Name prefix for this batch log directory, e.g. ilssc_seed")
     parser.add_argument("--train_arg", action="append", default=[],
                         help="Extra argument appended to every train_ig.py command; repeat for each token")
     args = parser.parse_args()
@@ -64,7 +73,12 @@ def main():
         raise ValueError("No datasets configured in batch config")
 
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    summary_path = output_dir / f"batch_summary_{run_id}.log"
+    run_name = _safe_run_name(args.run_name)
+    run_dir = output_dir / f"{run_name}_{run_id}"
+    run_dir.mkdir(parents=True, exist_ok=False)
+    summary_path = run_dir / "batch_summary.log"
+
+    print(f"[batch] run_dir -> {run_dir}")
 
     with open(summary_path, "w", encoding="utf-8") as summary:
         for item in datasets:
@@ -80,7 +94,7 @@ def main():
             _extend_args(cmd, merged_args)
             cmd.extend(args.train_arg)
 
-            log_path = output_dir / f"{name}_{run_id}.log"
+            log_path = run_dir / f"{name}.log"
             line = " ".join(cmd)
             print(f"[batch] start {name}")
             print(f"[batch] log -> {log_path}")

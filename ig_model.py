@@ -617,12 +617,43 @@ class IntentContrastiveModel(nn.Module):
 
         return (w * per_pos).sum(dim=1).mean()
 
+    def intent_local_seed_struct_loss(self, z, q_idx, intent_batch,
+                                      seed_idx, neg_idx, seed_weight=None,
+                                      proto_alpha=0.5, tau_gate=0.2):
+        zc = F.normalize(z, dim=-1)
+        zq = zc[q_idx]
+        zseed = zc[seed_idx]
+        zneg = zc[neg_idx]
+
+        seed_sim = torch.einsum('bh,bsh->bs', zq, zseed) / self.tau
+        neg_sim = torch.einsum('bh,bkh->bk', zq, zneg) / self.tau
+        neg_lse = torch.logsumexp(neg_sim, dim=1, keepdim=True)
+        denom = torch.logaddexp(seed_sim, neg_lse.expand_as(seed_sim))
+        per_seed = denom - seed_sim
+
+        if seed_weight is not None:
+            w = seed_weight.to(per_seed.device).float()
+            w = w / w.sum(dim=1, keepdim=True).clamp_min(1e-8)
+        else:
+            ip = F.normalize(self.intent_proj(zseed), dim=-1)
+            iq = F.normalize(intent_batch, dim=-1).unsqueeze(1)
+            gate_sim = (ip * iq).sum(dim=-1) / tau_gate
+            w = torch.softmax(gate_sim, dim=1)
+
+        node_loss = (w * per_seed).sum(dim=1).mean()
+        proto = F.normalize((w.unsqueeze(-1) * zseed).sum(dim=1), dim=-1)
+        proto_sim = (zq * proto).sum(dim=-1, keepdim=True) / self.tau
+        proto_logits = torch.cat([proto_sim, neg_sim], dim=1)
+        proto_loss = torch.logsumexp(proto_logits, dim=1) - proto_sim.squeeze(1)
+        proto_alpha = min(1.0, max(0.0, float(proto_alpha)))
+        return (1.0 - proto_alpha) * node_loss + proto_alpha * proto_loss.mean()
+
     def total_loss(self, z_adv, z_rec, intent_vector, reg_loss,
                    reg_lambda=0.5, adv_lambda=1.0, edge_fea_adv=None,
                    edge_fea_rec=None, suspicious_idx=None, lambda_rec=0.1,
                    igqc_args=None, lambda_igqc=0.0, ic_spnm_args=None,
-                   lambda_ic_spnm=0.0, cand_rec_args=None,
-                   lambda_cand_bce=0.0):
+                   lambda_ic_spnm=0.0, ilssc_args=None, lambda_ilssc=0.0,
+                   cand_rec_args=None, lambda_cand_bce=0.0):
         """
         总损失 = L_contrastive + λ_intent * L_intent + λ_adv * L_edge
                  - λ_reg * L_reg + λ_rec * L_reconstruction
@@ -659,6 +690,11 @@ class IntentContrastiveModel(nn.Module):
             l_ic_spnm = self.intent_conditioned_spnm_loss(**ic_spnm_args)
             loss = loss + lambda_ic_spnm * l_ic_spnm
 
+        l_ilssc = torch.tensor(0.0, device=z_adv.device)
+        if lambda_ilssc > 0 and ilssc_args is not None:
+            l_ilssc = self.intent_local_seed_struct_loss(**ilssc_args)
+            loss = loss + lambda_ilssc * l_ilssc
+
         l_cand_bce = torch.tensor(0.0, device=z_adv.device)
         num_cand_edges = 0
         if lambda_cand_bce > 0 and cand_rec_args is not None:
@@ -679,6 +715,7 @@ class IntentContrastiveModel(nn.Module):
             'num_cand_edges': num_cand_edges,
             'igqc': l_igqc.item(),
             'ic_spnm': l_ic_spnm.item(),
+            'ilssc': l_ilssc.item(),
             'total': loss.item(),
         }
 
