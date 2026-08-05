@@ -26,6 +26,10 @@ Options:
   --ic-spnm WEIGHT            Enable IC-SPNM with this lambda
   --frontier-ic-spnm WEIGHT   Enable frontier-aware IC-SPNM mix mode
   --relation-fusion TYPE      Relation fusion type: icra or transformer
+  --lambda-ilssc WEIGHT       Enable ILSSC with this lambda
+  --ilssc-seed-size N         ILSSC seed size
+  --greedy-init-seed-size N   Greedy initial seed size
+  --greedy-init-seed-hops N   Greedy initial seed hops
   -h, --help                  Show this help
 
 Examples:
@@ -35,6 +39,7 @@ Examples:
   bash run_batch.sh -d IMDB_NEW --rl --ac-size-sweep 200,400,800,1200,1600
   bash run_batch.sh -d ACM --frontier-ic-spnm 0.003
   bash run_batch.sh -d ACM,DBLP,IMDB_NEW --relation-fusion transformer
+  bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW --lambda-ilssc 0.1 --ilssc-seed-size 8 --greedy-init-seed-size 4 --greedy-init-seed-hops 2
   bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW -- --lambda_ilssc 0.1 --greedy_init_seed_size 4
   bash run_batch.sh -d DBLP -- --cs_relations apa --cs_w_list 0.10,0.12,0.14,0.16
 EOF
@@ -123,6 +128,46 @@ while [[ $# -gt 0 ]]; do
       ;;
     --relation-fusion|--relation_fusion)
       add_train_arg "--relation_fusion"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --lambda-ilssc|--lambda_ilssc|--ilssc)
+      add_train_arg "--lambda_ilssc"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --ilssc-seed-size|--ilssc_seed_size)
+      add_train_arg "--ilssc_seed_size"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --ilssc-neg|--ilssc_neg)
+      add_train_arg "--ilssc_neg"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --ilssc-num-queries|--ilssc_num_queries)
+      add_train_arg "--ilssc_num_queries"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --ilssc-hops|--ilssc_hops)
+      add_train_arg "--ilssc_hops"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --greedy-init-seed-size|--greedy_init_seed_size|--seed-greedy)
+      add_train_arg "--greedy_init_seed_size"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --greedy-init-seed-hops|--greedy_init_seed_hops)
+      add_train_arg "--greedy_init_seed_hops"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --greedy-init-seed-conn-beta|--greedy_init_seed_conn_beta)
+      add_train_arg "--greedy_init_seed_conn_beta"
       add_train_arg "$2"
       shift 2
       ;;
