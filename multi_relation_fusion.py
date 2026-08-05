@@ -75,6 +75,79 @@ class IntentConditionedRelationAttention(nn.Module):
         return fused, alpha
 
 
+class _RelationTransformerBlock(nn.Module):
+    def __init__(self, num_hidden, heads=4, drop_p=0.0):
+        super().__init__()
+        self.attn = nn.MultiheadAttention(
+            embed_dim=num_hidden, num_heads=heads, dropout=drop_p,
+            batch_first=True)
+        self.norm1 = nn.LayerNorm(num_hidden)
+        self.norm2 = nn.LayerNorm(num_hidden)
+        self.ffn = nn.Sequential(
+            nn.Linear(num_hidden, num_hidden * 4),
+            nn.GELU(),
+            nn.Dropout(drop_p),
+            nn.Linear(num_hidden * 4, num_hidden),
+            nn.Dropout(drop_p),
+        )
+
+    def forward(self, tokens):
+        attn_out, _ = self.attn(tokens, tokens, tokens, need_weights=False)
+        tokens = self.norm1(tokens + attn_out)
+        tokens = self.norm2(tokens + self.ffn(tokens))
+        return tokens
+
+
+class IntentConditionedRelationTransformer(nn.Module):
+    def __init__(self, num_hidden, intent_dim, num_relations, heads=4,
+                 num_layers=1, drop_p=0.0):
+        super().__init__()
+        assert num_hidden % heads == 0, "num_hidden 必须能整除 heads"
+        self.num_hidden = num_hidden
+        self.num_relations = num_relations
+        self.heads = heads
+        self.d_h = num_hidden // heads
+
+        self.intent_proj = nn.Linear(intent_dim, num_hidden)
+        self.rel_emb = nn.Parameter(torch.empty(num_relations, num_hidden))
+        self.blocks = nn.ModuleList([
+            _RelationTransformerBlock(num_hidden, heads=heads, drop_p=drop_p)
+            for _ in range(num_layers)
+        ])
+        self.W_q = nn.Linear(num_hidden, num_hidden)
+        self.W_k = nn.Linear(num_hidden, num_hidden)
+        self._reset()
+
+    def _reset(self):
+        nn.init.xavier_uniform_(self.intent_proj.weight)
+        nn.init.zeros_(self.intent_proj.bias)
+        nn.init.normal_(self.rel_emb, std=0.02)
+        nn.init.xavier_uniform_(self.W_q.weight)
+        nn.init.zeros_(self.W_q.bias)
+        nn.init.xavier_uniform_(self.W_k.weight)
+        nn.init.zeros_(self.W_k.bias)
+
+    def forward(self, zs, intent):
+        R = self.num_relations
+        Z = torch.stack(zs, dim=0)
+        N = Z.size(1)
+        rel_tokens = Z.permute(1, 0, 2) + self.rel_emb.unsqueeze(0)
+        intent_token = self.intent_proj(intent).view(1, 1, self.num_hidden).expand(N, 1, -1)
+        tokens = torch.cat([intent_token, rel_tokens], dim=1)
+        for block in self.blocks:
+            tokens = block(tokens)
+
+        intent_out = tokens[:, 0]
+        rel_out = tokens[:, 1:]
+        q = self.W_q(intent_out).view(N, self.heads, self.d_h)
+        k = self.W_k(rel_out).view(N, R, self.heads, self.d_h)
+        scores = torch.einsum('nhd,nrhd->rnh', q, k) / (self.d_h ** 0.5)
+        alpha = F.softmax(scores, dim=0)
+        v = rel_out.reshape(N, R, self.heads, self.d_h).permute(1, 0, 2, 3)
+        fused = (alpha.unsqueeze(-1) * v).sum(dim=0).reshape(N, self.num_hidden)
+        return fused, alpha
+
+
 class MultiRelationEncoder(nn.Module):
     """R 个独立 HII-GNN 编码器 + ICRA 融合。
 
@@ -84,7 +157,7 @@ class MultiRelationEncoder(nn.Module):
 
     def __init__(self, in_channels, num_hidden, activation, intent_dim,
                  num_relations, num_layers=2, heads=4, icra_heads=4,
-                 icra_dim=128, drop_p=0.0):
+                 icra_dim=128, drop_p=0.0, relation_fusion='icra'):
         super().__init__()
         self.num_relations = num_relations
         self.encoders = nn.ModuleList([
@@ -93,9 +166,17 @@ class MultiRelationEncoder(nn.Module):
                 num_layers=num_layers, heads=heads, drop_p=drop_p)
             for _ in range(num_relations)
         ])
-        self.icra = IntentConditionedRelationAttention(
-            num_hidden, intent_dim, num_relations,
-            heads=icra_heads, attn_dim=icra_dim)
+        self.relation_fusion = relation_fusion
+        if relation_fusion == 'icra':
+            self.fusion = IntentConditionedRelationAttention(
+                num_hidden, intent_dim, num_relations,
+                heads=icra_heads, attn_dim=icra_dim)
+        elif relation_fusion == 'transformer':
+            self.fusion = IntentConditionedRelationTransformer(
+                num_hidden, intent_dim, num_relations,
+                heads=icra_heads, num_layers=1, drop_p=drop_p)
+        else:
+            raise ValueError(f"Unknown relation_fusion: {relation_fusion}")
 
     def encode_per_relation(self, x, edge_index_list, edge_weight_list, intent):
         """返回 (zs, fused, alpha)。zs 暴露给对抗模型做 per-relation 扰动。"""
@@ -103,7 +184,7 @@ class MultiRelationEncoder(nn.Module):
         for r in range(self.num_relations):
             ew = edge_weight_list[r] if edge_weight_list is not None else None
             zs.append(self.encoders[r](x, edge_index_list[r], ew, intent))
-        fused, alpha = self.icra(zs, intent)
+        fused, alpha = self.fusion(zs, intent)
         return zs, fused, alpha
 
     def forward(self, x, edge_index_list, edge_weight_list, intent):

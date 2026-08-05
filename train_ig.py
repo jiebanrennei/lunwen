@@ -553,6 +553,9 @@ if __name__ == '__main__':
                         help='ICRA 关系注意力头数')
     parser.add_argument('--icra_dim', type=int, default=128,
                         help='ICRA 注意力投影维度')
+    parser.add_argument('--relation_fusion', type=str, default='icra',
+                        choices=['icra', 'transformer'],
+                        help='多关系 meta-path 融合方式: icra 或 transformer')
     parser.add_argument('--cs_relations', type=str, default=None,
                         help='逗号分隔 meta-path 名(如 pap,psp); None=全部关系')
     parser.add_argument('--lambda_rel_entropy', type=float, default=0.0,
@@ -679,6 +682,7 @@ if __name__ == '__main__':
           f"ic_spnm_pos_mode={args.ic_spnm_pos_mode} "
           f"ic_spnm_frontier_ratio={args.ic_spnm_frontier_ratio} "
           f"ic_spnm_frontier_hops={args.ic_spnm_frontier_hops} "
+          f"relation_fusion={args.relation_fusion} "
           f"cs_topk={cs_topk} cs_w_list={cs_w_list} "
           f"greedy_patience={args.greedy_patience} "
           f"greedy_min_gain_tol={args.greedy_min_gain_tol} "
@@ -768,9 +772,9 @@ if __name__ == '__main__':
             num_features, args.num_hidden, activation, args.intent_dim,
             num_relations=data.num_relations, num_layers=args.num_layers,
             heads=args.hii_heads, icra_heads=args.icra_heads,
-            icra_dim=args.icra_dim
+            icra_dim=args.icra_dim, relation_fusion=args.relation_fusion
         ).to(device)
-        print(f"[encoder] MultiRelation+ICRA  R={data.num_relations} "
+        print(f"[encoder] MultiRelation+{args.relation_fusion.upper()}  R={data.num_relations} "
               f"hii_heads={args.hii_heads} icra_heads={args.icra_heads} "
               f"icra_dim={args.icra_dim}")
     elif args.encoder == 'hii':

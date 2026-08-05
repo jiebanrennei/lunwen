@@ -37,6 +37,8 @@ def main():
     parser.add_argument("--datasets", default=None,
                         help="Comma-separated dataset names to run; default runs all configured datasets")
     parser.add_argument("--dry_run", action="store_true", help="Print commands without executing them")
+    parser.add_argument("--train_arg", action="append", default=[],
+                        help="Extra argument appended to every train_ig.py command; repeat for each token")
     args = parser.parse_args()
 
     config_path = Path(args.config).resolve()
@@ -76,6 +78,7 @@ def main():
 
             cmd = [python_bin, str(train_script)]
             _extend_args(cmd, merged_args)
+            cmd.extend(args.train_arg)
 
             log_path = output_dir / f"{name}_{run_id}.log"
             line = " ".join(cmd)
