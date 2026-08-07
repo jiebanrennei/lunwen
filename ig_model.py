@@ -619,7 +619,8 @@ class IntentContrastiveModel(nn.Module):
 
     def intent_local_seed_struct_loss(self, z, q_idx, intent_batch,
                                       seed_idx, neg_idx, seed_weight=None,
-                                      proto_alpha=0.5, tau_gate=0.2):
+                                      proto_alpha=0.5, tau_gate=0.2,
+                                      gate_mode='prior'):
         zc = F.normalize(z, dim=-1)
         zq = zc[q_idx]
         zseed = zc[seed_idx]
@@ -631,14 +632,21 @@ class IntentContrastiveModel(nn.Module):
         denom = torch.logaddexp(seed_sim, neg_lse.expand_as(seed_sim))
         per_seed = denom - seed_sim
 
-        ip = F.normalize(self.intent_proj(zseed), dim=-1)
-        iq = F.normalize(intent_batch, dim=-1).unsqueeze(1)
-        gate_sim = (ip * iq).sum(dim=-1) / tau_gate
+        gate_mode = str(gate_mode).lower()
+        prior = None
         if seed_weight is not None:
             prior = seed_weight.to(per_seed.device).float()
             prior = prior / prior.sum(dim=1, keepdim=True).clamp_min(1e-8)
-            gate_sim = gate_sim + torch.log(prior.clamp_min(1e-8))
-        w = torch.softmax(gate_sim, dim=1)
+
+        if gate_mode == 'prior' and prior is not None:
+            w = prior
+        else:
+            ip = F.normalize(self.intent_proj(zseed), dim=-1)
+            iq = F.normalize(intent_batch, dim=-1).unsqueeze(1)
+            gate_sim = (ip * iq).sum(dim=-1) / tau_gate
+            if gate_mode == 'mix' and prior is not None:
+                gate_sim = gate_sim + torch.log(prior.clamp_min(1e-8))
+            w = torch.softmax(gate_sim, dim=1)
 
         node_loss = (w * per_seed).sum(dim=1).mean()
         proto = F.normalize((w.unsqueeze(-1) * zseed).sum(dim=1), dim=-1)

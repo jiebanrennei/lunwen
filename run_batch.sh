@@ -29,6 +29,10 @@ Options:
   --lambda-ilssc WEIGHT       Enable ILSSC with this lambda
   --ilssc-seed-size N         ILSSC seed size
   --ilssc-hard-pool N         ILSSC hard-negative candidate pool size
+  --ilssc-neg-mode MODE       ILSSC negative mining: conservative or hard
+  --ilssc-gate-mode MODE      ILSSC seed weighting: prior, intent, or mix
+  --ilssc-warmup-epochs N     Disable ILSSC for first N epochs
+  --ilssc-ramp-epochs N       Linearly ramp ILSSC weight after warmup
   --greedy-init-seed-size N   Greedy initial seed size
   --greedy-init-seed-hops N   Greedy initial seed hops
   -h, --help                  Show this help
@@ -159,6 +163,26 @@ while [[ $# -gt 0 ]]; do
       ;;
     --ilssc-hops|--ilssc_hops)
       add_train_arg "--ilssc_hops"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --ilssc-neg-mode|--ilssc_neg_mode)
+      add_train_arg "--ilssc_neg_mode"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --ilssc-gate-mode|--ilssc_gate_mode)
+      add_train_arg "--ilssc_gate_mode"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --ilssc-warmup-epochs|--ilssc_warmup_epochs)
+      add_train_arg "--ilssc_warmup_epochs"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --ilssc-ramp-epochs|--ilssc_ramp_epochs)
+      add_train_arg "--ilssc_ramp_epochs"
       add_train_arg "$2"
       shift 2
       ;;

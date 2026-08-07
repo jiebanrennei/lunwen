@@ -460,6 +460,20 @@ def build_ic_spnm_args(z_rec, data, q_epoch, intent_vector, intent_generator,
     return ic_spnm_args, stats
 
 
+def effective_ilssc_lambda(args, epoch):
+    base = float(args.lambda_ilssc)
+    if base <= 0:
+        return 0.0
+    warmup = max(0, int(args.ilssc_warmup_epochs))
+    ramp = max(0, int(args.ilssc_ramp_epochs))
+    if epoch <= warmup:
+        return 0.0
+    if ramp > 0:
+        progress = min(1.0, max(0.0, (epoch - warmup) / float(ramp)))
+        return base * progress
+    return base
+
+
 def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
                      contrastive_model, qc_adj, node_score, args, rng_q):
     if qc_adj is None or args.lambda_ilssc <= 0:
@@ -607,9 +621,12 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
                 c_nbrs = qc_adj[int(cand)]
                 struct_scores.append(len(c_nbrs & seed_set) / max(1, len(c_nbrs)))
             struct_t = torch.tensor(struct_scores, dtype=torch.float, device=dev)
-            neg_score = (emb_sim
-                         + args.ilssc_intent_beta * neg_intent
-                         - args.ilssc_struct_beta * struct_t)
+            neg_score = emb_sim - args.ilssc_struct_beta * struct_t
+            if args.ilssc_neg_mode == 'hard':
+                neg_score = neg_score + args.ilssc_intent_beta * neg_intent
+            else:
+                neg_score = neg_score - args.ilssc_intent_beta * neg_intent
+
             k_neg = min(K, pool_size)
             neg_rank = torch.topk(neg_score, k_neg).indices
             neg_sel = pool_t[neg_rank]
@@ -640,6 +657,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
         seed_weight=torch.stack(seed_weight_rows).to(dev),
         proto_alpha=args.ilssc_proto_alpha,
         tau_gate=args.ilssc_tau_gate,
+        gate_mode=args.ilssc_gate_mode,
     )
     stats = {
         'valid_q': len(valid_q),
@@ -835,6 +853,16 @@ if __name__ == '__main__':
                         help='Weight of ILSSC seed-prototype contrast term')
     parser.add_argument('--ilssc_tau_gate', type=float, default=0.2,
                         help='Temperature for ILSSC seed weighting')
+    parser.add_argument('--ilssc_gate_mode', type=str, default='prior',
+                        choices=['prior', 'intent', 'mix'],
+                        help='ILSSC seed weighting in loss: prior=v1 stable, intent=differentiable, mix=both')
+    parser.add_argument('--ilssc_neg_mode', type=str, default='conservative',
+                        choices=['conservative', 'hard'],
+                        help='ILSSC negative mining: conservative avoids intent-aligned false negatives; hard mines intent-similar negatives')
+    parser.add_argument('--ilssc_warmup_epochs', type=int, default=0,
+                        help='Disable ILSSC for first N epochs')
+    parser.add_argument('--ilssc_ramp_epochs', type=int, default=0,
+                        help='Linearly ramp ILSSC weight after warmup for N epochs')
     parser.add_argument('--ilssc_min_align', type=float, default=-1.0,
                         help='Minimum intent alignment for ILSSC seed candidates')
     parser.add_argument('--intent_rerank_alpha', type=float, default=0.0,
@@ -915,6 +943,10 @@ if __name__ == '__main__':
           f"ilssc_neg={args.ilssc_neg} "
           f"ilssc_hard_pool={args.ilssc_hard_pool} "
           f"ilssc_hops={args.ilssc_hops} "
+          f"ilssc_neg_mode={args.ilssc_neg_mode} "
+          f"ilssc_gate_mode={args.ilssc_gate_mode} "
+          f"ilssc_warmup={args.ilssc_warmup_epochs} "
+          f"ilssc_ramp={args.ilssc_ramp_epochs} "
           f"relation_fusion={args.relation_fusion} "
           f"cs_topk={cs_topk} cs_w_list={cs_w_list} "
           f"greedy_patience={args.greedy_patience} "
@@ -1343,7 +1375,8 @@ if __name__ == '__main__':
 
         ilssc_args = None
         ilssc_stats = None
-        if qc_adj is not None and args.lambda_ilssc > 0:
+        eff_lambda_ilssc = effective_ilssc_lambda(args, epoch)
+        if qc_adj is not None and eff_lambda_ilssc > 0:
             ilssc_args, ilssc_stats = build_ilssc_args(
                 z_rec=z_rec,
                 data=data,
@@ -1374,7 +1407,7 @@ if __name__ == '__main__':
             ic_spnm_args=ic_spnm_args,
             lambda_ic_spnm=args.lambda_ic_spnm,
             ilssc_args=ilssc_args,
-            lambda_ilssc=args.lambda_ilssc,
+            lambda_ilssc=eff_lambda_ilssc,
             cand_rec_args=cand_rec_args,
             lambda_cand_bce=effective_lambda_cand_bce
         )
@@ -1409,6 +1442,7 @@ if __name__ == '__main__':
                f'ic_uniq={ic_spnm_stats["pos_unique"]:.1f}, '
                if args.lambda_ic_spnm > 0 and ic_spnm_stats is not None else '')
             + (f'ilssc={loss_info["ilssc"]:.4f}, '
+               f'il_lam={eff_lambda_ilssc:.4f}, '
                if args.lambda_ilssc > 0 else '')
             + (f'il_q={ilssc_stats["valid_q"]}, '
                f'il_seed={ilssc_stats["seed_align"]:.3f}, '
