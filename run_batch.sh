@@ -28,6 +28,7 @@ Options:
   --relation-fusion TYPE      Relation fusion type: icra or transformer
   --lambda-ilssc WEIGHT       Enable ILSSC with this lambda
   --ilssc-seed-size N         ILSSC seed size
+  --ilssc-hard-pool N         ILSSC hard-negative candidate pool size
   --greedy-init-seed-size N   Greedy initial seed size
   --greedy-init-seed-hops N   Greedy initial seed hops
   -h, --help                  Show this help
@@ -143,6 +144,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --ilssc-neg|--ilssc_neg)
       add_train_arg "--ilssc_neg"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --ilssc-hard-pool|--ilssc_hard_pool)
+      add_train_arg "--ilssc_hard_pool"
       add_train_arg "$2"
       shift 2
       ;;

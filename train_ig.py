@@ -472,7 +472,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
     K = max(1, int(args.ilssc_neg))
     hops = max(1, int(args.ilssc_hops))
     frontier_pool = max(1, int(args.ilssc_frontier_pool))
-    hard_pool = max(K, int(getattr(args, 'ic_spnm_hard_pool', 2048)))
+    hard_pool = max(K, int(args.ilssc_hard_pool))
     min_align = float(args.ilssc_min_align)
     tau_gate = max(1e-6, float(args.ilssc_tau_gate))
 
@@ -608,7 +608,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
                 struct_scores.append(len(c_nbrs & seed_set) / max(1, len(c_nbrs)))
             struct_t = torch.tensor(struct_scores, dtype=torch.float, device=dev)
             neg_score = (emb_sim
-                         - args.ilssc_intent_beta * neg_intent
+                         + args.ilssc_intent_beta * neg_intent
                          - args.ilssc_struct_beta * struct_t)
             k_neg = min(K, pool_size)
             neg_rank = torch.topk(neg_score, k_neg).indices
@@ -815,6 +815,8 @@ if __name__ == '__main__':
                         help='ILSSC connected local seed nodes per query')
     parser.add_argument('--ilssc_neg', type=int, default=256,
                         help='ILSSC hard negatives per query')
+    parser.add_argument('--ilssc_hard_pool', type=int, default=2048,
+                        help='Candidate pool size for ILSSC hard-negative mining')
     parser.add_argument('--ilssc_num_queries', type=int, default=8,
                         help='ILSSC sampled query nodes per epoch')
     parser.add_argument('--ilssc_hops', type=int, default=2,
@@ -911,6 +913,7 @@ if __name__ == '__main__':
           f"lambda_ilssc={args.lambda_ilssc} "
           f"ilssc_seed_size={args.ilssc_seed_size} "
           f"ilssc_neg={args.ilssc_neg} "
+          f"ilssc_hard_pool={args.ilssc_hard_pool} "
           f"ilssc_hops={args.ilssc_hops} "
           f"relation_fusion={args.relation_fusion} "
           f"cs_topk={cs_topk} cs_w_list={cs_w_list} "
@@ -1206,7 +1209,8 @@ if __name__ == '__main__':
     if args.lambda_ilssc > 0:
         print(f"[ILSSC] 全量图邻接表就绪, lambda={args.lambda_ilssc}, "
               f"seed={args.ilssc_seed_size} neg={args.ilssc_neg} "
-              f"B={args.ilssc_num_queries} hops={args.ilssc_hops} "
+              f"B={args.ilssc_num_queries} pool={args.ilssc_hard_pool} "
+              f"hops={args.ilssc_hops} "
               f"frontier_pool={args.ilssc_frontier_pool} "
               f"conn_beta={args.ilssc_conn_beta} "
               f"sim_beta={args.ilssc_sim_beta} "

@@ -504,21 +504,23 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
 
 def _best_community_for_w(node_order, cum_sims, avg, w,
                           patience=0, min_gain_tol=0.0,
-                          select_mode='first_drop'):
+                          select_mode='first_drop', min_size=1):
     """在一条扩展轨迹上, 对给定 w 找密度峰值, 返回对应社区 set。"""
     sizes = np.arange(1, len(cum_sims) + 1, dtype=np.float64)
     densities = (cum_sims - sizes * avg) / (sizes ** w)
     select_mode = str(select_mode).lower()
+    min_idx = min(max(0, int(min_size) - 1), len(cum_sims) - 1)
     if select_mode == 'global':
-        best_idx = int(np.argmax(densities))
+        rel_best = int(np.argmax(densities[min_idx:]))
+        best_idx = min_idx + rel_best
         return set(node_order[:best_idx + 1])
 
     patience = max(0, int(patience))
     min_gain_tol = max(0.0, float(min_gain_tol))
-    best_idx = 0
-    best_d = densities[0]
+    best_idx = min_idx
+    best_d = densities[min_idx]
     bad_steps = 0
-    for i in range(1, len(densities)):
+    for i in range(min_idx + 1, len(densities)):
         d = densities[i]
         if d > best_d:
             best_d = d
@@ -608,7 +610,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                 node_order, cum_sims, avg, w,
                 patience=greedy_patience,
                 min_gain_tol=greedy_min_gain_tol,
-                select_mode=greedy_select_mode)
+                select_mode=greedy_select_mode,
+                min_size=greedy_init_seed_size)
             pred = set(comm)
             if not include_query_in_pred:
                 pred.discard(int(q))
@@ -963,7 +966,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                 node_order, cum_sims, avg, w,
                 patience=greedy_patience,
                 min_gain_tol=greedy_min_gain_tol,
-                select_mode=greedy_select_mode)
+                select_mode=greedy_select_mode,
+                min_size=greedy_init_seed_size)
             pred = set(comm)
             if not include_query_in_pred:
                 pred.discard(int(q))
