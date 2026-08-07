@@ -37,6 +37,32 @@
     "compute_structure_metrics": true,
     "ckpt_interval": 0
   },
+  "profiles": {
+    "ilssc_auto": {
+      "base_args": {
+        "lambda_ilssc": 0.1,
+        "ilssc_seed_size": 8,
+        "ilssc_hard_pool": 2048,
+        "ilssc_neg_mode": "conservative",
+        "ilssc_gate_mode": "prior",
+        "greedy_init_seed_size": 1
+      },
+      "datasets": {
+        "ACM": {
+          "ilssc_warmup_epochs": 30,
+          "ilssc_ramp_epochs": 50
+        },
+        "DBLP": {
+          "ilssc_warmup_epochs": 10,
+          "ilssc_ramp_epochs": 30
+        },
+        "IMDB_NEW": {
+          "ilssc_warmup_epochs": 0,
+          "ilssc_ramp_epochs": 0
+        }
+      }
+    }
+  },
   "datasets": [
     {
       "name": "ACM",

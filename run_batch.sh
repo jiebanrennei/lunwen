@@ -5,9 +5,11 @@ CONFIG="batch_datasets.json"
 DATASETS=""
 DRY_RUN=0
 RUN_NAME=""
+PROFILE=""
 AC_EPOCHS="100"
 AC_SIZE_SWEEP="200,400,600,800,1000,1200,1400"
 TRAIN_ARGS=()
+DATASET_ARGS=()
 
 usage() {
   cat <<'EOF'
@@ -20,6 +22,16 @@ Options:
   -e, --epochs N              Override --num_epochs
   --dry-run                   Print commands without running training
   --run-name NAME             Batch log directory name prefix under batch_runs/
+  --profile NAME              Named profile from config.profiles
+  --ilssc-auto                Use dataset-specific ILSSC profile from batch_datasets.json
+  --dataset-arg DATASET KEY VALUE
+                              Override one train_ig.py arg for one dataset
+  --acm-warmup N              ACM ILSSC warmup epochs
+  --acm-ramp N                ACM ILSSC ramp epochs
+  --dblp-warmup N             DBLP ILSSC warmup epochs
+  --dblp-ramp N               DBLP ILSSC ramp epochs
+  --imdb-warmup N             IMDB_NEW ILSSC warmup epochs
+  --imdb-ramp N               IMDB_NEW ILSSC ramp epochs
   --rl                        Enable actor-critic search
   --ac-epochs N               Actor-critic epochs. Default: 100
   --ac-size-sweep LIST        Actor-critic size sweep list
@@ -44,6 +56,10 @@ Examples:
   bash run_batch.sh -d IMDB_NEW --rl --ac-size-sweep 200,400,800,1200,1600
   bash run_batch.sh -d ACM --frontier-ic-spnm 0.003
   bash run_batch.sh -d ACM,DBLP,IMDB_NEW --relation-fusion transformer
+  bash run_batch.sh --ilssc-auto -d ACM,DBLP,IMDB_NEW
+  bash run_batch.sh --ilssc-auto -d ACM,DBLP,IMDB_NEW --acm-warmup 20 --acm-ramp 40 --dblp-warmup 10 --dblp-ramp 30 --imdb-warmup 0 --imdb-ramp 0
+  bash run_batch.sh --ilssc-auto -d ACM,DBLP,IMDB_NEW --dataset-arg ACM ilssc_seed_size 6 --dataset-arg DBLP ilssc_seed_size 8
+  bash run_batch.sh --run-name ilssc_auto -d ACM,DBLP,IMDB_NEW --profile ilssc_auto
   bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW --lambda-ilssc 0.1 --ilssc-seed-size 8 --greedy-init-seed-size 4 --greedy-init-seed-hops 2
   bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW -- --lambda_ilssc 0.1 --greedy_init_seed_size 4
   bash run_batch.sh -d DBLP -- --cs_relations apa --cs_w_list 0.10,0.12,0.14,0.16
@@ -52,6 +68,10 @@ EOF
 
 add_train_arg() {
   TRAIN_ARGS+=("--train_arg=$1")
+}
+
+add_dataset_arg() {
+  DATASET_ARGS+=("--dataset_arg" "$1" "$2" "$3")
 }
 
 while [[ $# -gt 0 ]]; do
@@ -75,6 +95,45 @@ while [[ $# -gt 0 ]]; do
       ;;
     --run-name|--run_name|--name)
       RUN_NAME="$2"
+      shift 2
+      ;;
+    --profile)
+      PROFILE="$2"
+      shift 2
+      ;;
+    --ilssc-auto|--ilssc_auto)
+      PROFILE="ilssc_auto"
+      if [[ -z "${RUN_NAME}" ]]; then
+        RUN_NAME="ilssc_auto"
+      fi
+      shift
+      ;;
+    --dataset-arg|--dataset_arg)
+      add_dataset_arg "$2" "$3" "$4"
+      shift 4
+      ;;
+    --acm-warmup|--acm_warmup)
+      add_dataset_arg "ACM" "ilssc_warmup_epochs" "$2"
+      shift 2
+      ;;
+    --acm-ramp|--acm_ramp)
+      add_dataset_arg "ACM" "ilssc_ramp_epochs" "$2"
+      shift 2
+      ;;
+    --dblp-warmup|--dblp_warmup)
+      add_dataset_arg "DBLP" "ilssc_warmup_epochs" "$2"
+      shift 2
+      ;;
+    --dblp-ramp|--dblp_ramp)
+      add_dataset_arg "DBLP" "ilssc_ramp_epochs" "$2"
+      shift 2
+      ;;
+    --imdb-warmup|--imdb_warmup|--imdb-new-warmup|--imdb_new_warmup)
+      add_dataset_arg "IMDB_NEW" "ilssc_warmup_epochs" "$2"
+      shift 2
+      ;;
+    --imdb-ramp|--imdb_ramp|--imdb-new-ramp|--imdb_new_ramp)
+      add_dataset_arg "IMDB_NEW" "ilssc_ramp_epochs" "$2"
       shift 2
       ;;
     --rl)
@@ -240,6 +299,10 @@ fi
 if [[ -n "${RUN_NAME}" ]]; then
   CMD+=(--run_name "${RUN_NAME}")
 fi
+if [[ -n "${PROFILE}" ]]; then
+  CMD+=(--profile "${PROFILE}")
+fi
+CMD+=("${DATASET_ARGS[@]}")
 CMD+=("${TRAIN_ARGS[@]}")
 
 "${CMD[@]}"
