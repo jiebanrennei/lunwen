@@ -438,7 +438,12 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                          hse_high_order_beta=0.0,
                          hse_comm_cohesion_beta=0.0,
                          hse_boundary_gamma=0.0,
-                         hse_pool_size=0):
+                         hse_pool_size=0,
+                         early_stop_w=None,
+                         early_stop_avg=None,
+                         early_stop_patience=0,
+                         early_stop_min_gain_tol=0.0,
+                         early_stop_min_size=1):
     """
     单次贪心扩展: 从 frontier 中按相似度/结构连接度选择节点, 记录累计 sim 和。
     HSE: 高阶可达 + 社区凝聚 + 边界惩罚 可选加入候选排序。
@@ -462,6 +467,27 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     cum_sims = [cur_sum]
     added = 0
     community_halo = set(adj[q]) | {q} if use_hse else None
+    use_early_stop = early_stop_w is not None and early_stop_avg is not None
+    early_stop_patience = max(0, int(early_stop_patience))
+    early_stop_min_gain_tol = max(0.0, float(early_stop_min_gain_tol))
+    early_stop_min_size = max(1, int(early_stop_min_size))
+    early_best_density = None
+    early_bad_steps = 0
+
+    def _should_stop_trace():
+        nonlocal early_best_density, early_bad_steps
+        if not use_early_stop or len(cum_sims) < early_stop_min_size:
+            return False
+        size = float(len(cum_sims))
+        density = (cum_sims[-1] - size * float(early_stop_avg)) / (size ** float(early_stop_w))
+        if early_best_density is None or density > early_best_density:
+            early_best_density = density
+            early_bad_steps = 0
+            return False
+        if early_stop_min_gain_tol > 0 and early_best_density - density <= early_stop_min_gain_tol:
+            return False
+        early_bad_steps += 1
+        return early_bad_steps > early_stop_patience
 
     if init_seed_size > 1:
         seed_target = min(init_seed_size - 1, max_iter)
@@ -549,6 +575,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
             chosen_idx = chosen_idx[np.argsort(-scores[chosen_idx])]
             chosen = [int(cand_arr[i]) for i in chosen_idx]
 
+        stop_trace = False
         for node in chosen:
             if node in visited:
                 continue
@@ -562,8 +589,13 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
             node_order.append(node)
             cum_sims.append(cur_sum)
             added += 1
+            if _should_stop_trace():
+                stop_trace = True
+                break
             if added >= max_iter:
                 break
+        if stop_trace:
+            break
 
     return node_order, np.array(cum_sims, dtype=np.float64)
 
@@ -664,6 +696,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
 
         sims_q = sims[q]
         avg = float(sims_q.mean())
+        early_w = w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None
 
         # 只扩展一次
         node_order, cum_sims = _greedy_expand_trace(
@@ -677,7 +710,12 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             hse_high_order_beta=hse_high_order_beta,
             hse_comm_cohesion_beta=hse_comm_cohesion_beta,
             hse_boundary_gamma=hse_boundary_gamma,
-            hse_pool_size=hse_pool_size)
+            hse_pool_size=hse_pool_size,
+            early_stop_w=early_w,
+            early_stop_avg=avg,
+            early_stop_patience=greedy_patience,
+            early_stop_min_gain_tol=greedy_min_gain_tol,
+            early_stop_min_size=greedy_init_seed_size)
 
         for w in w_list:
             comm = _best_community_for_w(
@@ -1030,6 +1068,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             sims_q = sims_q * mult
 
         avg = float(sims_q.mean())
+        early_w = w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None
         node_order, cum_sims = _greedy_expand_trace(
             q, sims_q, adj, max_iter,
             frontier_batch_size=frontier_batch_size,
@@ -1041,7 +1080,12 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             hse_high_order_beta=hse_high_order_beta,
             hse_comm_cohesion_beta=hse_comm_cohesion_beta,
             hse_boundary_gamma=hse_boundary_gamma,
-            hse_pool_size=hse_pool_size)
+            hse_pool_size=hse_pool_size,
+            early_stop_w=early_w,
+            early_stop_avg=avg,
+            early_stop_patience=greedy_patience,
+            early_stop_min_gain_tol=greedy_min_gain_tol,
+            early_stop_min_size=greedy_init_seed_size)
 
         for w in w_list:
             comm = _best_community_for_w(
