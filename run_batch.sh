@@ -66,6 +66,7 @@ Options:
   --greedy-comm-cohesion-beta X
                               HSE-Greedy candidate-to-community cohesion weight
   --greedy-boundary-gamma X   HSE-Greedy boundary expansion penalty weight
+  --greedy-hse-pool-size N    Top-K frontier candidates scored by HSE; 0=full frontier
   -h, --help                  Show this help
 
 Examples:
@@ -81,7 +82,7 @@ Examples:
   bash run_batch.sh --ilssc-auto --id-ilssc -d ACM,DBLP,IMDB_NEW --intent-dist-k 16 --intent-dist-beta 0.5
   bash run_batch.sh --run-name scid_ilssc --profile scid_ilssc_auto -d ACM,DBLP,IMDB_NEW --intent-dist-beta 0.2 --intent-dist-stable
   bash run_batch.sh --run-name hidbr_ilssc --profile hidbr_ilssc_auto -d ACM,DBLP,IMDB_NEW --ilssc-high-order-beta 0.2
-  bash run_batch.sh --run-name hse_greedy --profile hidbr_ilssc_auto -d ACM,DBLP,IMDB_NEW --ilssc-high-order-beta 0.2 --greedy-high-order-beta 0.2 --greedy-comm-cohesion-beta 0.1 --greedy-boundary-gamma 0.05
+  bash run_batch.sh --run-name hse_greedy --profile hidbr_ilssc_auto -d ACM,DBLP,IMDB_NEW --ilssc-high-order-beta 0.2 --greedy-high-order-beta 0.2 --greedy-comm-cohesion-beta 0.1 --greedy-boundary-gamma 0.05 --greedy-hse-pool-size 512
   bash run_batch.sh --run-name ilssc_auto -d ACM,DBLP,IMDB_NEW --profile ilssc_auto
   bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW --lambda-ilssc 0.1 --ilssc-seed-size 8 --greedy-init-seed-size 4 --greedy-init-seed-hops 2
   bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW -- --lambda_ilssc 0.1 --greedy_init_seed_size 4
@@ -358,6 +359,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --greedy-boundary-gamma|--greedy_boundary_gamma|--hse-boundary-gamma|--hse_boundary_gamma)
       add_train_arg "--greedy_boundary_gamma"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --greedy-hse-pool-size|--greedy_hse_pool_size|--hse-pool-size|--hse_pool_size)
+      add_train_arg "--greedy_hse_pool_size"
       add_train_arg "$2"
       shift 2
       ;;

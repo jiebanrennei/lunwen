@@ -138,7 +138,8 @@
         "ilssc_high_order_beta": 0.2,
         "greedy_high_order_beta": 0.2,
         "greedy_comm_cohesion_beta": 0.1,
-        "greedy_boundary_gamma": 0.05
+        "greedy_boundary_gamma": 0.05,
+        "greedy_hse_pool_size": 512
       },
       "datasets": {
         "ACM": {

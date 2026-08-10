@@ -1126,6 +1126,8 @@ if __name__ == '__main__':
                         help='HSE-Greedy candidate-to-community high-order cohesion weight')
     parser.add_argument('--greedy_boundary_gamma', type=float, default=0.0,
                         help='HSE-Greedy boundary expansion penalty weight')
+    parser.add_argument('--greedy_hse_pool_size', type=int, default=0,
+                        help='Top-K frontier candidates scored by HSE; 0 uses the full frontier')
     parser.add_argument('--include_query_in_pred', action='store_true',
                         help='Include query node in both predicted and truth communities during greedy CS evaluation')
     parser.add_argument('--eval_perturb_mode', type=str, default='none',
@@ -1199,6 +1201,7 @@ if __name__ == '__main__':
           f"greedy_high_order_beta={args.greedy_high_order_beta} "
           f"greedy_comm_cohesion_beta={args.greedy_comm_cohesion_beta} "
           f"greedy_boundary_gamma={args.greedy_boundary_gamma} "
+          f"greedy_hse_pool_size={args.greedy_hse_pool_size} "
           f"include_query_in_pred={args.include_query_in_pred} "
           f"eval_perturb={args.eval_perturb_mode}:{args.eval_perturb_rate} "
           f"seed={args.seed}")
@@ -1850,7 +1853,8 @@ if __name__ == '__main__':
             greedy_init_seed_min_sim=args.greedy_init_seed_min_sim,
             hse_high_order_beta=args.greedy_high_order_beta,
             hse_comm_cohesion_beta=args.greedy_comm_cohesion_beta,
-            hse_boundary_gamma=args.greedy_boundary_gamma
+            hse_boundary_gamma=args.greedy_boundary_gamma,
+            hse_pool_size=args.greedy_hse_pool_size
         )
     else:
         cs_results = community_search(emb, data, topk=cs_topk,
@@ -1876,7 +1880,8 @@ if __name__ == '__main__':
                                             greedy_init_seed_min_sim=args.greedy_init_seed_min_sim,
                                             hse_high_order_beta=args.greedy_high_order_beta,
                                             hse_comm_cohesion_beta=args.greedy_comm_cohesion_beta,
-                                            hse_boundary_gamma=args.greedy_boundary_gamma)
+                                            hse_boundary_gamma=args.greedy_boundary_gamma,
+                                            hse_pool_size=args.greedy_hse_pool_size)
 
     # Actor-Critic 社区搜索评测 (启用时)
     cs_rl = None

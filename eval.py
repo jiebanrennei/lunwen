@@ -315,6 +315,15 @@ def _build_adj_list(edge_index, num_nodes):
     return adj
 
 
+def _limit_hse_pool(cand_arr, scores, pool_size):
+    pool_size = int(pool_size)
+    if pool_size <= 0 or cand_arr.size <= pool_size:
+        return cand_arr, scores
+    top_idx = np.argpartition(-scores, pool_size - 1)[:pool_size]
+    top_idx = top_idx[np.argsort(-scores[top_idx])]
+    return cand_arr[top_idx], scores[top_idx]
+
+
 def _hse_candidate_scores(q, cand_arr, visited, adj, community_halo,
                           high_order_beta=0.0, comm_cohesion_beta=0.0,
                           boundary_gamma=0.0):
@@ -428,7 +437,8 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                          init_seed_min_sim=None,
                          hse_high_order_beta=0.0,
                          hse_comm_cohesion_beta=0.0,
-                         hse_boundary_gamma=0.0):
+                         hse_boundary_gamma=0.0,
+                         hse_pool_size=0):
     """
     单次贪心扩展: 从 frontier 中按相似度/结构连接度选择节点, 记录累计 sim 和。
     HSE: 高阶可达 + 社区凝聚 + 边界惩罚 可选加入候选排序。
@@ -442,6 +452,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     hse_high_order_beta = max(0.0, float(hse_high_order_beta))
     hse_comm_cohesion_beta = max(0.0, float(hse_comm_cohesion_beta))
     hse_boundary_gamma = max(0.0, float(hse_boundary_gamma))
+    hse_pool_size = max(0, int(hse_pool_size))
     use_hse = (hse_high_order_beta > 0 or hse_comm_cohesion_beta > 0 or hse_boundary_gamma > 0)
     visited = {q}
     frontier = set(adj[q]) - visited
@@ -472,6 +483,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                 ], dtype=np.float64)
                 scores = scores + init_seed_conn_beta * conn
             if use_hse:
+                cand_arr, scores = _limit_hse_pool(cand_arr, scores, hse_pool_size)
                 hse_scores = _hse_candidate_scores(
                     q, cand_arr, visited, adj, community_halo,
                     hse_high_order_beta, hse_comm_cohesion_beta,
@@ -520,6 +532,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
             scores = scores + connectivity_boost * conn
 
         if use_hse:
+            cand_arr, scores = _limit_hse_pool(cand_arr, scores, hse_pool_size)
             hse_scores = _hse_candidate_scores(
                 q, cand_arr, visited, adj, community_halo,
                 hse_high_order_beta, hse_comm_cohesion_beta,
@@ -602,7 +615,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             greedy_init_seed_min_sim=None,
                             hse_high_order_beta=0.0,
                             hse_comm_cohesion_beta=0.0,
-                            hse_boundary_gamma=0.0):
+                            hse_boundary_gamma=0.0,
+                            hse_pool_size=0):
     """
     贪心 + 密度自适应的社区搜索评估。
 
@@ -662,7 +676,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             init_seed_min_sim=greedy_init_seed_min_sim,
             hse_high_order_beta=hse_high_order_beta,
             hse_comm_cohesion_beta=hse_comm_cohesion_beta,
-            hse_boundary_gamma=hse_boundary_gamma)
+            hse_boundary_gamma=hse_boundary_gamma,
+            hse_pool_size=hse_pool_size)
 
         for w in w_list:
             comm = _best_community_for_w(
@@ -963,7 +978,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      greedy_init_seed_min_sim=None,
                                      hse_high_order_beta=0.0,
                                      hse_comm_cohesion_beta=0.0,
-                                     hse_boundary_gamma=0.0):
+                                     hse_boundary_gamma=0.0,
+                                     hse_pool_size=0):
     """
     动态意图 + 贪心扩展社区搜索。
     每个查询节点生成意图→重新编码→贪心扩展。
@@ -1024,7 +1040,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             init_seed_min_sim=greedy_init_seed_min_sim,
             hse_high_order_beta=hse_high_order_beta,
             hse_comm_cohesion_beta=hse_comm_cohesion_beta,
-            hse_boundary_gamma=hse_boundary_gamma)
+            hse_boundary_gamma=hse_boundary_gamma,
+            hse_pool_size=hse_pool_size)
 
         for w in w_list:
             comm = _best_community_for_w(
