@@ -1,0 +1,24 @@
+nohup: ignoring input
+Unknown argument: --relation_fusion
+Usage:
+  bash run_batch.sh [options] [-- extra train_ig.py args]
+
+Options:
+  -c, --config PATH           Batch config JSON. Default: batch_datasets.json
+  -d, --datasets LIST         Comma-separated datasets, e.g. ACM,DBLP,IMDB_NEW
+  -e, --epochs N              Override --num_epochs
+  --dry-run                   Print commands without running training
+  --rl                        Enable actor-critic search
+  --ac-epochs N               Actor-critic epochs. Default: 100
+  --ac-size-sweep LIST        Actor-critic size sweep list
+  --ic-spnm WEIGHT            Enable IC-SPNM with this lambda
+  --frontier-ic-spnm WEIGHT   Enable frontier-aware IC-SPNM mix mode
+  -h, --help                  Show this help
+
+Examples:
+  bash run_batch.sh
+  bash run_batch.sh -d ACM,DBLP
+  bash run_batch.sh --dry-run -d ACM --rl
+  bash run_batch.sh -d IMDB_NEW --rl --ac-size-sweep 200,400,800,1200,1600
+  bash run_batch.sh -d ACM --frontier-ic-spnm 0.003
+  bash run_batch.sh -d DBLP -- --cs_relations apa --cs_w_list 0.10,0.12,0.14,0.16

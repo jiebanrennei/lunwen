@@ -1,0 +1,13 @@
+[command] python /root/code/lunwne/lunwen/train_ig.py --num_epochs 200 --intent_source dynamic --num_hidden 256 --num_proj_hidden 256 --num_edge_hidden 32 --adv_lambda 0 --lambda_intent 0.1 --encoder hii --num_layers 2 --hii_heads 1 --icra_heads 1 --icra_dim 64 --sparsify_topk 10 --disable_candidate_edges --lambda_cand_bce 0 --lambda_rel_entropy 0.02 --cs_full_graph --cs_num_queries 40 --cs_topk 5,10,20,50,oracle --cs_w_list 0.18,0.2,0.22,0.24,0.26 --greedy_patience 1 --greedy_min_gain_tol 1e-4 --frontier_batch_size 2 --greedy_connectivity_boost 0 --greedy_select_mode first_drop --intent_rerank_alpha 0 --lambda_ic_spnm 0 --compute_structure_metrics --ckpt_interval 0 --cs_relations pap,psp --query_file log/queries_ACM_40_seed0_new.txt --dataset ACM
+Traceback (most recent call last):
+  File "/root/code/lunwne/lunwen/train_ig.py", line 26, in <module>
+    from utils import set_everything, get_dataset, get_cs_dataset, CS_DATASETS
+  File "/root/code/lunwne/lunwen/utils.py", line 10, in <module>
+    from torch_geometric.datasets import (
+  File "/root/miniconda3/lib/python3.8/site-packages/torch_geometric/__init__.py", line 4, in <module>
+    import torch_geometric.typing
+  File "/root/miniconda3/lib/python3.8/site-packages/torch_geometric/typing.py", line 23, in <module>
+    NO_MKL = 'USE_MKL=OFF' in torch.__config__.show() or WITH_WINDOWS
+  File "/root/miniconda3/lib/python3.8/site-packages/torch/__config__.py", line 10, in show
+    return torch._C._show_config()
+KeyboardInterrupt
