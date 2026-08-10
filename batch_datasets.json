@@ -68,6 +68,39 @@
           "ilssc_ramp_epochs": 0
         }
       }
+    },
+    "scid_ilssc_auto": {
+      "base_args": {
+        "lambda_ilssc": 0.1,
+        "ilssc_seed_size": 8,
+        "ilssc_hard_pool": 2048,
+        "ilssc_neg_mode": "conservative",
+        "ilssc_gate_mode": "prior",
+        "greedy_init_seed_size": 1,
+        "ilssc_use_intent_dist": true,
+        "intent_dist_stable": true,
+        "intent_dist_k": 16,
+        "intent_dist_beta": 0.2,
+        "intent_dist_tau": 0.2,
+        "intent_dist_update_interval": 10,
+        "intent_dist_ema": 0.7,
+        "intent_dist_min_conf": 0.0,
+        "intent_dist_conf_tau": 0.05
+      },
+      "datasets": {
+        "ACM": {
+          "ilssc_warmup_epochs": 30,
+          "ilssc_ramp_epochs": 50
+        },
+        "DBLP": {
+          "ilssc_warmup_epochs": 10,
+          "ilssc_ramp_epochs": 30
+        },
+        "IMDB_NEW": {
+          "ilssc_warmup_epochs": 0,
+          "ilssc_ramp_epochs": 0
+        }
+      }
     }
   },
   "datasets": [

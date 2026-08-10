@@ -50,6 +50,15 @@ Options:
   --intent-dist-tau X         ID-ILSSC intent distribution temperature
   --intent-dist-beta X        ID-ILSSC distribution similarity weight
   --intent-dist-proto-mode M  ID-ILSSC prototype mode: random or score
+  --intent-dist-stable        Enable stable confidence-gated intent distribution memory
+  --intent-dist-update-interval N
+                              Stable intent distribution memory update interval
+  --intent-dist-memory-warmup N
+                              Stable intent distribution memory warmup epochs
+  --intent-dist-ema X         EMA coefficient for stable intent prototypes
+  --intent-dist-anchor-pool N Anchor pool size for stable prototype sampling; 0=all nodes
+  --intent-dist-conf-tau X    Confidence gate temperature
+  --intent-dist-min-conf X    Minimum confidence product for gate
   --greedy-init-seed-size N   Greedy initial seed size
   --greedy-init-seed-hops N   Greedy initial seed hops
   -h, --help                  Show this help
@@ -65,6 +74,7 @@ Examples:
   bash run_batch.sh --ilssc-auto -d ACM,DBLP,IMDB_NEW --acm-warmup 20 --acm-ramp 40 --dblp-warmup 10 --dblp-ramp 30 --imdb-warmup 0 --imdb-ramp 0
   bash run_batch.sh --ilssc-auto -d ACM,DBLP,IMDB_NEW --dataset-arg ACM ilssc_seed_size 6 --dataset-arg DBLP ilssc_seed_size 8
   bash run_batch.sh --ilssc-auto --id-ilssc -d ACM,DBLP,IMDB_NEW --intent-dist-k 16 --intent-dist-beta 0.5
+  bash run_batch.sh --run-name scid_ilssc --profile scid_ilssc_auto -d ACM,DBLP,IMDB_NEW --intent-dist-beta 0.2 --intent-dist-stable
   bash run_batch.sh --run-name ilssc_auto -d ACM,DBLP,IMDB_NEW --profile ilssc_auto
   bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW --lambda-ilssc 0.1 --ilssc-seed-size 8 --greedy-init-seed-size 4 --greedy-init-seed-hops 2
   bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW -- --lambda_ilssc 0.1 --greedy_init_seed_size 4
@@ -272,6 +282,40 @@ while [[ $# -gt 0 ]]; do
       ;;
     --intent-dist-proto-mode|--intent_dist_proto_mode)
       add_train_arg "--intent_dist_proto_mode"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --intent-dist-stable|--intent_dist_stable|--scid-ilssc|--scid_ilssc)
+      add_train_arg "--intent_dist_stable"
+      shift
+      ;;
+    --intent-dist-update-interval|--intent_dist_update_interval)
+      add_train_arg "--intent_dist_update_interval"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --intent-dist-memory-warmup|--intent_dist_memory_warmup)
+      add_train_arg "--intent_dist_memory_warmup"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --intent-dist-ema|--intent_dist_ema)
+      add_train_arg "--intent_dist_ema"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --intent-dist-anchor-pool|--intent_dist_anchor_pool)
+      add_train_arg "--intent_dist_anchor_pool"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --intent-dist-conf-tau|--intent_dist_conf_tau)
+      add_train_arg "--intent_dist_conf_tau"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --intent-dist-min-conf|--intent_dist_min_conf)
+      add_train_arg "--intent_dist_min_conf"
       add_train_arg "$2"
       shift 2
       ;;
