@@ -17,6 +17,7 @@ for _v in ("OMP_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ.setdefault(_v, "1")
 
 import argparse
+import math
 import os.path as osp
 import random
 import sys
@@ -602,6 +603,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
             intent_dist = _build_intent_dist_context(z_norm, node_score, args, rng_q, dev)
             intent_conf = None
     dist_beta = float(getattr(args, 'intent_dist_beta', 0.0))
+    high_beta = float(getattr(args, 'ilssc_high_order_beta', 0.0))
     conf_tau = max(1e-6, float(getattr(args, 'intent_dist_conf_tau', 0.05)))
     min_conf = float(getattr(args, 'intent_dist_min_conf', 0.0))
 
@@ -611,6 +613,17 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
         conf_q = intent_conf[int(qi)]
         conf_t = intent_conf[node_t]
         return torch.sigmoid((conf_q * conf_t - min_conf) / conf_tau)
+
+    def _high_order_scores(qi, cand_list):
+        if high_beta <= 0:
+            return torch.zeros(len(cand_list), dtype=torch.float, device=dev)
+        q_nbrs = qc_adj[int(qi)]
+        q_deg = max(1, len(q_nbrs))
+        vals = []
+        for cand in cand_list:
+            c_nbrs = qc_adj[int(cand)]
+            vals.append(len(q_nbrs & c_nbrs) / math.sqrt(q_deg * max(1, len(c_nbrs))))
+        return torch.tensor(vals, dtype=torch.float, device=dev)
 
     def _score_seed_candidates(cands, qi, iq_n, visited):
         cand_list = list(dict.fromkeys(int(c) for c in cands
@@ -630,6 +643,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
             conf_t = intent_conf[cand_t]
         else:
             conf_t = torch.zeros_like(sim_t)
+        high_t = _high_order_scores(qi, cand_list)
         conn_vals = []
         for cand in cand_list:
             c_nbrs = qc_adj[int(cand)]
@@ -638,8 +652,9 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
         score_t = (align_t
                    + args.ilssc_sim_beta * sim_t
                    + args.ilssc_conn_beta * conn_t
+                   + high_beta * high_t
                    + dist_beta * gate_t * dist_t)
-        return cand_list, align_t, sim_t, conn_t, dist_t, gate_t, conf_t, score_t
+        return cand_list, align_t, sim_t, conn_t, dist_t, gate_t, conf_t, high_t, score_t
 
     def _mine_seed(qi, iq_n):
         visited = {int(qi)}
@@ -652,7 +667,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
             if len(cand) > frontier_pool:
                 cand = np.random.choice(np.array(cand, dtype=np.int64),
                                         size=frontier_pool, replace=False).tolist()
-            cand_list, align_t, sim_t, conn_t, dist_t, gate_t, conf_t, score_t = _score_seed_candidates(
+            cand_list, align_t, sim_t, conn_t, dist_t, gate_t, conf_t, high_t, score_t = _score_seed_candidates(
                 cand, qi, iq_n, visited)
             if not cand_list:
                 break
@@ -672,6 +687,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
                     'dist': float(dist_t[idx].item()),
                     'gate': float(gate_t[idx].item()),
                     'conf': float(conf_t[idx].item()),
+                    'high': float(high_t[idx].item()),
                     'score': float(score_t[idx].item()),
                     'hop': hop,
                 })
@@ -691,8 +707,10 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
     seed_rows, neg_rows, seed_weight_rows = [], [], []
     valid_q, intent_list = [], []
     seed_align_stats, seed_sim_stats, seed_conn_stats, seed_dist_stats = [], [], [], []
+    seed_high_stats = []
     seed_conf_stats, seed_gate_stats, q_conf_stats = [], [], []
     seed_unique_stats, neg_sim_stats, neg_dist_stats = [], [], []
+    neg_high_stats = []
     neg_conf_stats, neg_gate_stats = [], []
 
     for qi in q_list:
@@ -708,7 +726,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
             iq_n = F.normalize(iq.detach(), dim=-1)
             seed_items = _mine_seed(qi, iq_n)
             if len(seed_items) == 0:
-                cand_list, align_t, sim_t, conn_t, dist_t, gate_t, conf_t, score_t = _score_seed_candidates(
+                cand_list, align_t, sim_t, conn_t, dist_t, gate_t, conf_t, high_t, score_t = _score_seed_candidates(
                     qc_adj[qi], qi, iq_n, {qi})
                 if not cand_list:
                     continue
@@ -722,6 +740,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
                     'dist': float(dist_t[idx].item()),
                     'gate': float(gate_t[idx].item()),
                     'conf': float(conf_t[idx].item()),
+                    'high': float(high_t[idx].item()),
                     'score': float(score_t[idx].item()),
                     'hop': 1,
                 } for idx in rank]
@@ -758,6 +777,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
                 c_nbrs = qc_adj[int(cand)]
                 struct_scores.append(len(c_nbrs & seed_set) / max(1, len(c_nbrs)))
             struct_t = torch.tensor(struct_scores, dtype=torch.float, device=dev)
+            neg_high = _high_order_scores(qi, pool_np.tolist())
             if intent_dist is not None:
                 neg_dist = intent_dist[pool_t] @ intent_dist[qi]
                 neg_gate = _confidence_gate(qi, pool_t)
@@ -770,7 +790,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
             else:
                 neg_conf = torch.zeros_like(emb_sim)
                 q_conf = torch.tensor(0.0, device=dev)
-            neg_score = emb_sim - args.ilssc_struct_beta * struct_t
+            neg_score = emb_sim - args.ilssc_struct_beta * struct_t - high_beta * neg_high
             if args.ilssc_neg_mode == 'hard':
                 neg_score = neg_score + args.ilssc_intent_beta * neg_intent + dist_beta * neg_gate * neg_dist
             else:
@@ -792,12 +812,14 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
         seed_sim_stats.append(float(np.mean([item['sim'] for item in seed_items])))
         seed_conn_stats.append(float(np.mean([item['conn'] for item in seed_items])))
         seed_dist_stats.append(float(np.mean([item['dist'] for item in seed_items])))
+        seed_high_stats.append(float(np.mean([item['high'] for item in seed_items])))
         seed_conf_stats.append(float(np.mean([item['conf'] for item in seed_items])))
         seed_gate_stats.append(float(np.mean([item['gate'] for item in seed_items])))
         q_conf_stats.append(float(q_conf.item()))
         seed_unique_stats.append(float(unique_count))
         neg_sim_stats.append(float(emb_sim[neg_rank].mean().item()))
         neg_dist_stats.append(float(neg_dist[neg_rank].mean().item()))
+        neg_high_stats.append(float(neg_high[neg_rank].mean().item()))
         neg_conf_stats.append(float(neg_conf[neg_rank].mean().item()))
         neg_gate_stats.append(float(neg_gate[neg_rank].mean().item()))
 
@@ -821,12 +843,14 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
         'seed_sim': float(np.mean(seed_sim_stats)),
         'seed_conn': float(np.mean(seed_conn_stats)),
         'seed_dist': float(np.mean(seed_dist_stats)),
+        'seed_high': float(np.mean(seed_high_stats)),
         'seed_conf': float(np.mean(seed_conf_stats)),
         'seed_gate': float(np.mean(seed_gate_stats)),
         'q_conf': float(np.mean(q_conf_stats)),
         'seed_unique': float(np.mean(seed_unique_stats)),
         'neg_sim': float(np.mean(neg_sim_stats)),
         'neg_dist': float(np.mean(neg_dist_stats)),
+        'neg_high': float(np.mean(neg_high_stats)),
         'neg_conf': float(np.mean(neg_conf_stats)),
         'neg_gate': float(np.mean(neg_gate_stats)),
         'id_updated': int(bool(intent_dist_memory is not None and intent_dist_memory.updated_this_epoch)),
@@ -1017,6 +1041,8 @@ if __name__ == '__main__':
                         help='Penalty for intent-aligned ILSSC hard negatives')
     parser.add_argument('--ilssc_struct_beta', type=float, default=0.5,
                         help='Penalty for structurally close ILSSC hard negatives')
+    parser.add_argument('--ilssc_high_order_beta', type=float, default=0.0,
+                        help='IDBR-inspired sparse high-order common-neighbor prior for ILSSC mining')
     parser.add_argument('--ilssc_proto_alpha', type=float, default=0.5,
                         help='Weight of ILSSC seed-prototype contrast term')
     parser.add_argument('--ilssc_tau_gate', type=float, default=0.2,
@@ -1140,6 +1166,7 @@ if __name__ == '__main__':
           f"ilssc_hops={args.ilssc_hops} "
           f"ilssc_neg_mode={args.ilssc_neg_mode} "
           f"ilssc_gate_mode={args.ilssc_gate_mode} "
+          f"ilssc_high_order_beta={args.ilssc_high_order_beta} "
           f"ilssc_warmup={args.ilssc_warmup_epochs} "
           f"ilssc_ramp={args.ilssc_ramp_epochs} "
           f"ilssc_use_intent_dist={args.ilssc_use_intent_dist} "
@@ -1454,6 +1481,7 @@ if __name__ == '__main__':
               f"frontier_pool={args.ilssc_frontier_pool} "
               f"conn_beta={args.ilssc_conn_beta} "
               f"sim_beta={args.ilssc_sim_beta} "
+              f"high_order_beta={args.ilssc_high_order_beta} "
               f"proto_alpha={args.ilssc_proto_alpha} "
               f"use_intent_dist={args.ilssc_use_intent_dist} "
               f"dist_k={args.intent_dist_k} "
@@ -1676,12 +1704,14 @@ if __name__ == '__main__':
                f'il_sim={ilssc_stats["seed_sim"]:.3f}, '
                f'il_conn={ilssc_stats["seed_conn"]:.3f}, '
                f'il_dist={ilssc_stats["seed_dist"]:.3f}, '
+               f'il_high={ilssc_stats["seed_high"]:.3f}, '
                f'il_conf_q={ilssc_stats["q_conf"]:.3f}, '
                f'il_conf_seed={ilssc_stats["seed_conf"]:.3f}, '
                f'il_gate_seed={ilssc_stats["seed_gate"]:.3f}, '
                f'il_uniq={ilssc_stats["seed_unique"]:.1f}, '
                f'il_neg={ilssc_stats["neg_sim"]:.3f}, '
                f'il_neg_dist={ilssc_stats["neg_dist"]:.3f}, '
+               f'il_neg_high={ilssc_stats["neg_high"]:.3f}, '
                f'il_conf_neg={ilssc_stats["neg_conf"]:.3f}, '
                f'il_gate_neg={ilssc_stats["neg_gate"]:.3f}, '
                f'id_upd={ilssc_stats["id_updated"]}, '

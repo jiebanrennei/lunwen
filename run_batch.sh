@@ -43,6 +43,7 @@ Options:
   --ilssc-hard-pool N         ILSSC hard-negative candidate pool size
   --ilssc-neg-mode MODE       ILSSC negative mining: conservative or hard
   --ilssc-gate-mode MODE      ILSSC seed weighting: prior, intent, or mix
+  --ilssc-high-order-beta X   IDBR-inspired sparse high-order prior weight
   --ilssc-warmup-epochs N     Disable ILSSC for first N epochs
   --ilssc-ramp-epochs N       Linearly ramp ILSSC weight after warmup
   --id-ilssc                  Enable intent-distribution-aware ILSSC
@@ -75,6 +76,7 @@ Examples:
   bash run_batch.sh --ilssc-auto -d ACM,DBLP,IMDB_NEW --dataset-arg ACM ilssc_seed_size 6 --dataset-arg DBLP ilssc_seed_size 8
   bash run_batch.sh --ilssc-auto --id-ilssc -d ACM,DBLP,IMDB_NEW --intent-dist-k 16 --intent-dist-beta 0.5
   bash run_batch.sh --run-name scid_ilssc --profile scid_ilssc_auto -d ACM,DBLP,IMDB_NEW --intent-dist-beta 0.2 --intent-dist-stable
+  bash run_batch.sh --run-name hidbr_ilssc --profile hidbr_ilssc_auto -d ACM,DBLP,IMDB_NEW --ilssc-high-order-beta 0.2
   bash run_batch.sh --run-name ilssc_auto -d ACM,DBLP,IMDB_NEW --profile ilssc_auto
   bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW --lambda-ilssc 0.1 --ilssc-seed-size 8 --greedy-init-seed-size 4 --greedy-init-seed-hops 2
   bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW -- --lambda_ilssc 0.1 --greedy_init_seed_size 4
@@ -248,6 +250,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --ilssc-gate-mode|--ilssc_gate_mode)
       add_train_arg "--ilssc_gate_mode"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --ilssc-high-order-beta|--ilssc_high_order_beta)
+      add_train_arg "--ilssc_high_order_beta"
       add_train_arg "$2"
       shift 2
       ;;
