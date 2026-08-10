@@ -95,7 +95,8 @@ class IntentGuidedAdversarialModel(nn.Module):
     def __init__(self, encoder, num_hidden, intent_dim, num_edge_hidden,
                  drop_p=0.1, num_cand_per_node=5, num_relations=1,
                  cand_sources='embed', cand_source_topk=None,
-                 cand_label_mode='soft', cand_hard_threshold=0.5):
+                 cand_label_mode='soft', cand_hard_threshold=0.5,
+                 cand_intent_dist_k=16, cand_intent_dist_tau=0.2):
         super().__init__()
 
         self.encoder = encoder
@@ -108,6 +109,8 @@ class IntentGuidedAdversarialModel(nn.Module):
         self.cand_source_topk = cand_source_topk
         self.cand_label_mode = cand_label_mode
         self.cand_hard_threshold = cand_hard_threshold
+        self.cand_intent_dist_k = cand_intent_dist_k
+        self.cand_intent_dist_tau = cand_intent_dist_tau
 
         if num_relations > 1:
             self.edge_model_adv = nn.ModuleList([
@@ -214,6 +217,23 @@ class IntentGuidedAdversarialModel(nn.Module):
         return (torch.tensor([src, dst], dtype=torch.long, device=device),
                 torch.tensor(scores, dtype=torch.float, device=device))
 
+    def _intent_distribution_candidates(self, z, upper_edges, num_nodes, k):
+        device = z.device
+        if k <= 0 or num_nodes <= 1:
+            return self._empty_candidates(device)[:2]
+
+        proto_k = min(num_nodes, max(2, int(self.cand_intent_dist_k)))
+        tau = max(1e-6, float(self.cand_intent_dist_tau))
+        z_norm = F.normalize(z, dim=-1)
+        if proto_k >= num_nodes:
+            proto = z_norm
+        else:
+            proto_idx = torch.topk(z.norm(dim=-1), proto_k).indices
+            proto = z_norm[proto_idx]
+        intent_dist = torch.softmax((z_norm @ proto.t()) / tau, dim=-1)
+        intent_dist = F.normalize(intent_dist, dim=-1)
+        return self._similarity_candidates(intent_dist, upper_edges, num_nodes, k)
+
     def _merge_candidates(self, candidate_items, num_nodes, device):
         score_by_pair = {}
         count_by_pair = {}
@@ -294,6 +314,8 @@ class IntentGuidedAdversarialModel(nn.Module):
             candidate_items.append(self._twohop_candidates(upper_edges, num_nodes, k, binary_score=True))
         if 'common' in sources:
             candidate_items.append(self._twohop_candidates(upper_edges, num_nodes, k, binary_score=False))
+        if 'dist' in sources or 'intent_dist' in sources or 'distribution' in sources:
+            candidate_items.append(self._intent_distribution_candidates(z, upper_edges, num_nodes, k))
 
         if 'intent' in sources and rec_head is not None and intent_vector is not None:
             pool_edges = self._merge_candidates(candidate_items, num_nodes, z.device)[0]

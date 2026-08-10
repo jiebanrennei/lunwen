@@ -45,6 +45,11 @@ Options:
   --ilssc-gate-mode MODE      ILSSC seed weighting: prior, intent, or mix
   --ilssc-warmup-epochs N     Disable ILSSC for first N epochs
   --ilssc-ramp-epochs N       Linearly ramp ILSSC weight after warmup
+  --id-ilssc                  Enable intent-distribution-aware ILSSC
+  --intent-dist-k N           Number of ID-ILSSC intent prototypes
+  --intent-dist-tau X         ID-ILSSC intent distribution temperature
+  --intent-dist-beta X        ID-ILSSC distribution similarity weight
+  --intent-dist-proto-mode M  ID-ILSSC prototype mode: random or score
   --greedy-init-seed-size N   Greedy initial seed size
   --greedy-init-seed-hops N   Greedy initial seed hops
   -h, --help                  Show this help
@@ -59,6 +64,7 @@ Examples:
   bash run_batch.sh --ilssc-auto -d ACM,DBLP,IMDB_NEW
   bash run_batch.sh --ilssc-auto -d ACM,DBLP,IMDB_NEW --acm-warmup 20 --acm-ramp 40 --dblp-warmup 10 --dblp-ramp 30 --imdb-warmup 0 --imdb-ramp 0
   bash run_batch.sh --ilssc-auto -d ACM,DBLP,IMDB_NEW --dataset-arg ACM ilssc_seed_size 6 --dataset-arg DBLP ilssc_seed_size 8
+  bash run_batch.sh --ilssc-auto --id-ilssc -d ACM,DBLP,IMDB_NEW --intent-dist-k 16 --intent-dist-beta 0.5
   bash run_batch.sh --run-name ilssc_auto -d ACM,DBLP,IMDB_NEW --profile ilssc_auto
   bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW --lambda-ilssc 0.1 --ilssc-seed-size 8 --greedy-init-seed-size 4 --greedy-init-seed-hops 2
   bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW -- --lambda_ilssc 0.1 --greedy_init_seed_size 4
@@ -242,6 +248,30 @@ while [[ $# -gt 0 ]]; do
       ;;
     --ilssc-ramp-epochs|--ilssc_ramp_epochs)
       add_train_arg "--ilssc_ramp_epochs"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --id-ilssc|--id_ilssc|--ilssc-use-intent-dist|--ilssc_use_intent_dist)
+      add_train_arg "--ilssc_use_intent_dist"
+      shift
+      ;;
+    --intent-dist-k|--intent_dist_k)
+      add_train_arg "--intent_dist_k"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --intent-dist-tau|--intent_dist_tau)
+      add_train_arg "--intent_dist_tau"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --intent-dist-beta|--intent_dist_beta)
+      add_train_arg "--intent_dist_beta"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --intent-dist-proto-mode|--intent_dist_proto_mode)
+      add_train_arg "--intent_dist_proto_mode"
       add_train_arg "$2"
       shift 2
       ;;

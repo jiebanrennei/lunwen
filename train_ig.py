@@ -474,6 +474,22 @@ def effective_ilssc_lambda(args, epoch):
     return base
 
 
+def _build_intent_dist_context(z_norm, node_score, args, rng_q, dev):
+    if not getattr(args, 'ilssc_use_intent_dist', False):
+        return None
+    N = z_norm.size(0)
+    K = min(N, max(2, int(args.intent_dist_k)))
+    tau = max(1e-6, float(args.intent_dist_tau))
+    if getattr(args, 'intent_dist_proto_mode', 'random') == 'score' and node_score is not None:
+        proto_idx = torch.topk(node_score.detach().float(), K).indices.to(dev)
+    else:
+        proto_idx = torch.randperm(N, generator=rng_q)[:K].to(dev)
+    proto = F.normalize(z_norm[proto_idx], dim=-1)
+    dist = torch.softmax((z_norm @ proto.t()) / tau, dim=-1)
+    dist_norm = F.normalize(dist, dim=-1)
+    return dist_norm
+
+
 def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
                      contrastive_model, qc_adj, node_score, args, rng_q):
     if qc_adj is None or args.lambda_ilssc <= 0:
@@ -493,15 +509,21 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
     with torch.no_grad():
         z_norm = F.normalize(z_rec.detach(), dim=-1)
         z_align = F.normalize(contrastive_model.intent_proj(z_rec.detach()), dim=-1)
+        intent_dist = _build_intent_dist_context(z_norm, node_score, args, rng_q, dev)
+    dist_beta = float(getattr(args, 'intent_dist_beta', 0.0))
 
     def _score_seed_candidates(cands, qi, iq_n, visited):
         cand_list = list(dict.fromkeys(int(c) for c in cands
                                        if int(c) != int(qi) and int(c) not in visited))
         if not cand_list:
-            return [], None, None, None, None
+            return [], None, None, None, None, None
         cand_t = torch.tensor(cand_list, device=dev)
         align_t = z_align[cand_t] @ iq_n
         sim_t = z_norm[cand_t] @ z_norm[int(qi)]
+        if intent_dist is not None:
+            dist_t = intent_dist[cand_t] @ intent_dist[int(qi)]
+        else:
+            dist_t = torch.zeros_like(sim_t)
         conn_vals = []
         for cand in cand_list:
             c_nbrs = qc_adj[int(cand)]
@@ -509,8 +531,9 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
         conn_t = torch.tensor(conn_vals, dtype=torch.float, device=dev)
         score_t = (align_t
                    + args.ilssc_sim_beta * sim_t
-                   + args.ilssc_conn_beta * conn_t)
-        return cand_list, align_t, sim_t, conn_t, score_t
+                   + args.ilssc_conn_beta * conn_t
+                   + dist_beta * dist_t)
+        return cand_list, align_t, sim_t, conn_t, dist_t, score_t
 
     def _mine_seed(qi, iq_n):
         visited = {int(qi)}
@@ -523,7 +546,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
             if len(cand) > frontier_pool:
                 cand = np.random.choice(np.array(cand, dtype=np.int64),
                                         size=frontier_pool, replace=False).tolist()
-            cand_list, align_t, sim_t, conn_t, score_t = _score_seed_candidates(
+            cand_list, align_t, sim_t, conn_t, dist_t, score_t = _score_seed_candidates(
                 cand, qi, iq_n, visited)
             if not cand_list:
                 break
@@ -540,6 +563,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
                     'align': float(align_t[idx].item()),
                     'sim': float(sim_t[idx].item()),
                     'conn': float(conn_t[idx].item()),
+                    'dist': float(dist_t[idx].item()),
                     'score': float(score_t[idx].item()),
                     'hop': hop,
                 })
@@ -558,8 +582,8 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
 
     seed_rows, neg_rows, seed_weight_rows = [], [], []
     valid_q, intent_list = [], []
-    seed_align_stats, seed_sim_stats, seed_conn_stats = [], [], []
-    seed_unique_stats, neg_sim_stats = [], []
+    seed_align_stats, seed_sim_stats, seed_conn_stats, seed_dist_stats = [], [], [], []
+    seed_unique_stats, neg_sim_stats, neg_dist_stats = [], [], []
 
     for qi in q_list:
         qi = int(qi)
@@ -574,7 +598,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
             iq_n = F.normalize(iq.detach(), dim=-1)
             seed_items = _mine_seed(qi, iq_n)
             if len(seed_items) == 0:
-                cand_list, align_t, sim_t, conn_t, score_t = _score_seed_candidates(
+                cand_list, align_t, sim_t, conn_t, dist_t, score_t = _score_seed_candidates(
                     qc_adj[qi], qi, iq_n, {qi})
                 if not cand_list:
                     continue
@@ -585,6 +609,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
                     'align': float(align_t[idx].item()),
                     'sim': float(sim_t[idx].item()),
                     'conn': float(conn_t[idx].item()),
+                    'dist': float(dist_t[idx].item()),
                     'score': float(score_t[idx].item()),
                     'hop': 1,
                 } for idx in rank]
@@ -621,11 +646,15 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
                 c_nbrs = qc_adj[int(cand)]
                 struct_scores.append(len(c_nbrs & seed_set) / max(1, len(c_nbrs)))
             struct_t = torch.tensor(struct_scores, dtype=torch.float, device=dev)
+            if intent_dist is not None:
+                neg_dist = intent_dist[pool_t] @ intent_dist[qi]
+            else:
+                neg_dist = torch.zeros_like(emb_sim)
             neg_score = emb_sim - args.ilssc_struct_beta * struct_t
             if args.ilssc_neg_mode == 'hard':
-                neg_score = neg_score + args.ilssc_intent_beta * neg_intent
+                neg_score = neg_score + args.ilssc_intent_beta * neg_intent + dist_beta * neg_dist
             else:
-                neg_score = neg_score - args.ilssc_intent_beta * neg_intent
+                neg_score = neg_score - args.ilssc_intent_beta * neg_intent - dist_beta * neg_dist
 
             k_neg = min(K, pool_size)
             neg_rank = torch.topk(neg_score, k_neg).indices
@@ -642,8 +671,10 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
         seed_align_stats.append(float(np.mean([item['align'] for item in seed_items])))
         seed_sim_stats.append(float(np.mean([item['sim'] for item in seed_items])))
         seed_conn_stats.append(float(np.mean([item['conn'] for item in seed_items])))
+        seed_dist_stats.append(float(np.mean([item['dist'] for item in seed_items])))
         seed_unique_stats.append(float(unique_count))
         neg_sim_stats.append(float(emb_sim[neg_rank].mean().item()))
+        neg_dist_stats.append(float(neg_dist[neg_rank].mean().item()))
 
     if not valid_q:
         return None, None
@@ -664,8 +695,10 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
         'seed_align': float(np.mean(seed_align_stats)),
         'seed_sim': float(np.mean(seed_sim_stats)),
         'seed_conn': float(np.mean(seed_conn_stats)),
+        'seed_dist': float(np.mean(seed_dist_stats)),
         'seed_unique': float(np.mean(seed_unique_stats)),
         'neg_sim': float(np.mean(neg_sim_stats)),
+        'neg_dist': float(np.mean(neg_dist_stats)),
     }
     return ilssc_args, stats
 
@@ -710,9 +743,13 @@ if __name__ == '__main__':
     parser.add_argument('--num_cand_per_node', type=int, default=5,
                         help='Final candidate reconstruction edges per node')
     parser.add_argument('--cand_sources', type=str, default='embed',
-                        help='Comma-separated candidate sources: embed,twohop,semantic,common,intent')
+                        help='Comma-separated candidate sources: embed,twohop,semantic,common,intent,dist')
     parser.add_argument('--cand_source_topk', type=int, default=None,
                         help='Per-source candidate top-k before merging; None=derived from num_cand_per_node')
+    parser.add_argument('--cand_intent_dist_k', type=int, default=16,
+                        help='Prototype count for dist/intent_dist candidate-edge source')
+    parser.add_argument('--cand_intent_dist_tau', type=float, default=0.2,
+                        help='Temperature for dist/intent_dist candidate-edge assignments')
     parser.add_argument('--cand_label_mode', type=str, default='soft',
                         choices=['soft', 'hard', 'consensus'],
                         help='Pseudo-label mode for candidate reconstruction BCE')
@@ -865,6 +902,17 @@ if __name__ == '__main__':
                         help='Linearly ramp ILSSC weight after warmup for N epochs')
     parser.add_argument('--ilssc_min_align', type=float, default=-1.0,
                         help='Minimum intent alignment for ILSSC seed candidates')
+    parser.add_argument('--ilssc_use_intent_dist', action='store_true',
+                        help='Enable ID-ILSSC: intent-distribution-aware seed and negative mining')
+    parser.add_argument('--intent_dist_k', type=int, default=16,
+                        help='Number of online intent distribution prototypes for ID-ILSSC')
+    parser.add_argument('--intent_dist_tau', type=float, default=0.2,
+                        help='Temperature for assigning nodes to intent distribution prototypes')
+    parser.add_argument('--intent_dist_beta', type=float, default=0.5,
+                        help='Weight of intent distribution similarity in ID-ILSSC mining')
+    parser.add_argument('--intent_dist_proto_mode', type=str, default='random',
+                        choices=['random', 'score'],
+                        help='Prototype node selection for ID-ILSSC: random or suspicious-score top nodes')
     parser.add_argument('--intent_rerank_alpha', type=float, default=0.0,
                         help='推理阶段意图 rerank 系数; 0=关(默认), 实验设 0.1~0.3')
     parser.add_argument('--no_intent_loss', action='store_true',
@@ -930,6 +978,8 @@ if __name__ == '__main__':
     print(f"[config] cand_sources={args.cand_sources} "
           f"num_cand_per_node={effective_num_cand_per_node} "
           f"cand_label_mode={args.cand_label_mode} "
+          f"cand_dist_k={args.cand_intent_dist_k} "
+          f"cand_dist_tau={args.cand_intent_dist_tau} "
           f"lambda_cand_bce={effective_lambda_cand_bce} "
           f"lambda_ic_spnm={args.lambda_ic_spnm} "
           f"ic_spnm_pos={args.ic_spnm_pos} "
@@ -947,6 +997,11 @@ if __name__ == '__main__':
           f"ilssc_gate_mode={args.ilssc_gate_mode} "
           f"ilssc_warmup={args.ilssc_warmup_epochs} "
           f"ilssc_ramp={args.ilssc_ramp_epochs} "
+          f"ilssc_use_intent_dist={args.ilssc_use_intent_dist} "
+          f"intent_dist_k={args.intent_dist_k} "
+          f"intent_dist_tau={args.intent_dist_tau} "
+          f"intent_dist_beta={args.intent_dist_beta} "
+          f"intent_dist_proto_mode={args.intent_dist_proto_mode} "
           f"relation_fusion={args.relation_fusion} "
           f"cs_topk={cs_topk} cs_w_list={cs_w_list} "
           f"greedy_patience={args.greedy_patience} "
@@ -1084,7 +1139,9 @@ if __name__ == '__main__':
         cand_sources=args.cand_sources,
         cand_source_topk=args.cand_source_topk,
         cand_label_mode=args.cand_label_mode,
-        cand_hard_threshold=args.cand_hard_threshold
+        cand_hard_threshold=args.cand_hard_threshold,
+        cand_intent_dist_k=args.cand_intent_dist_k,
+        cand_intent_dist_tau=args.cand_intent_dist_tau
     ).to(device)
     optimizer_adv = torch.optim.Adam(
         adv_model.parameters(), lr=args.learning_rate_adv,
@@ -1246,7 +1303,12 @@ if __name__ == '__main__':
               f"frontier_pool={args.ilssc_frontier_pool} "
               f"conn_beta={args.ilssc_conn_beta} "
               f"sim_beta={args.ilssc_sim_beta} "
-              f"proto_alpha={args.ilssc_proto_alpha}")
+              f"proto_alpha={args.ilssc_proto_alpha} "
+              f"use_intent_dist={args.ilssc_use_intent_dist} "
+              f"dist_k={args.intent_dist_k} "
+              f"dist_tau={args.intent_dist_tau} "
+              f"dist_beta={args.intent_dist_beta} "
+              f"dist_proto_mode={args.intent_dist_proto_mode}")
 
     prev = t()
     epoch = start_epoch - 1             # 续训跳过循环时兜底: 最后已完成的轮次
@@ -1448,8 +1510,10 @@ if __name__ == '__main__':
                f'il_seed={ilssc_stats["seed_align"]:.3f}, '
                f'il_sim={ilssc_stats["seed_sim"]:.3f}, '
                f'il_conn={ilssc_stats["seed_conn"]:.3f}, '
+               f'il_dist={ilssc_stats["seed_dist"]:.3f}, '
                f'il_uniq={ilssc_stats["seed_unique"]:.1f}, '
                f'il_neg={ilssc_stats["neg_sim"]:.3f}, '
+               f'il_neg_dist={ilssc_stats["neg_dist"]:.3f}, '
                if args.lambda_ilssc > 0 and ilssc_stats is not None else '')
             + f'this epoch {now - prev:.4f}, total {now - start:.4f}'
         )

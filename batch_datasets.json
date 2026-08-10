@@ -45,6 +45,13 @@
         "ilssc_hard_pool": 2048,
         "ilssc_neg_mode": "conservative",
         "ilssc_gate_mode": "prior",
+        "disable_candidate_edges": false,
+        "num_cand_per_node": 4,
+        "cand_sources": "embed,twohop,common,dist,intent",
+        "cand_intent_dist_k": 16,
+        "cand_intent_dist_tau": 0.2,
+        "lambda_cand_bce": 0.02,
+        "cand_label_mode": "soft",
         "greedy_init_seed_size": 1
       },
       "datasets": {

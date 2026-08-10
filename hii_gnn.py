@@ -70,14 +70,14 @@ class LocalIntentInjectionLayer(MessagePassing):
     def message(self, x_i, x_j, gate, index, edge_weight, size_i):
         E = x_j.size(0)
         gate_exp = gate.unsqueeze(0).expand(E, -1, -1)
-        x_i_gated = x_i * gate_exp                                # 意图调制源节点
-        cat = torch.cat([x_i_gated, x_j], dim=-1)                 # [E,heads,2*hd]
+        x_j_gated = x_j * gate_exp
+        cat = torch.cat([x_j_gated, x_i], dim=-1)                 # [E,heads,2*hd]
         alpha = self.leaky((cat * self.att).sum(dim=-1))           # [E,heads]
         alpha = softmax(alpha, index, num_nodes=size_i)
         if edge_weight is not None:
             alpha = alpha * edge_weight.view(-1, 1)
         alpha = self.dropout(alpha)
-        return x_j * alpha.unsqueeze(-1)
+        return x_j_gated * alpha.unsqueeze(-1)
 
 
 class NeighborIntentAggregationLayer(MessagePassing):
