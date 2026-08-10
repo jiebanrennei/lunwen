@@ -315,6 +315,31 @@ def _build_adj_list(edge_index, num_nodes):
     return adj
 
 
+def _hse_candidate_scores(q, cand_arr, visited, adj, community_halo,
+                          high_order_beta=0.0, comm_cohesion_beta=0.0,
+                          boundary_gamma=0.0):
+    if high_order_beta <= 0 and comm_cohesion_beta <= 0 and boundary_gamma <= 0:
+        return None
+    q_nbrs = adj[int(q)]
+    q_deg = max(1, len(q_nbrs))
+    visited_set = visited if isinstance(visited, set) else set(visited)
+    scores = np.zeros(cand_arr.size, dtype=np.float64)
+    for i, c in enumerate(cand_arr):
+        c = int(c)
+        c_nbrs = adj[c]
+        c_deg = max(1, len(c_nbrs))
+        if high_order_beta > 0:
+            reach = len(q_nbrs & c_nbrs) / np.sqrt(q_deg * c_deg)
+            scores[i] += high_order_beta * reach
+        if comm_cohesion_beta > 0:
+            cohesion = len(c_nbrs & community_halo) / c_deg
+            scores[i] += comm_cohesion_beta * cohesion
+        if boundary_gamma > 0:
+            boundary = len(c_nbrs - community_halo - visited_set) / c_deg
+            scores[i] -= boundary_gamma * boundary
+    return scores
+
+
 def _bfs_farthest(start, node_set, adj):
     """从 start 出发在 node_set 诱导子图上 BFS,返回 (最远节点, 最远距离)。"""
     dist = {start: 0}
@@ -400,9 +425,13 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                          frontier_batch_size=1, connectivity_boost=0.0,
                          init_seed_size=1, init_seed_hops=1,
                          init_seed_conn_beta=0.3,
-                         init_seed_min_sim=None):
+                         init_seed_min_sim=None,
+                         hse_high_order_beta=0.0,
+                         hse_comm_cohesion_beta=0.0,
+                         hse_boundary_gamma=0.0):
     """
     单次贪心扩展: 从 frontier 中按相似度/结构连接度选择节点, 记录累计 sim 和。
+    HSE: 高阶可达 + 社区凝聚 + 边界惩罚 可选加入候选排序。
     """
     q = int(q)
     frontier_batch_size = max(1, int(frontier_batch_size))
@@ -410,6 +439,10 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     init_seed_size = max(1, int(init_seed_size))
     init_seed_hops = max(1, int(init_seed_hops))
     init_seed_conn_beta = max(0.0, float(init_seed_conn_beta))
+    hse_high_order_beta = max(0.0, float(hse_high_order_beta))
+    hse_comm_cohesion_beta = max(0.0, float(hse_comm_cohesion_beta))
+    hse_boundary_gamma = max(0.0, float(hse_boundary_gamma))
+    use_hse = (hse_high_order_beta > 0 or hse_comm_cohesion_beta > 0 or hse_boundary_gamma > 0)
     visited = {q}
     frontier = set(adj[q]) - visited
     cur_sum = float(sims_q[q])
@@ -417,6 +450,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     node_order = [q]
     cum_sims = [cur_sum]
     added = 0
+    community_halo = set(adj[q]) | {q} if use_hse else None
 
     if init_seed_size > 1:
         seed_target = min(init_seed_size - 1, max_iter)
@@ -437,6 +471,12 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                     for c in cand_arr
                 ], dtype=np.float64)
                 scores = scores + init_seed_conn_beta * conn
+            if use_hse:
+                hse_scores = _hse_candidate_scores(
+                    q, cand_arr, visited, adj, community_halo,
+                    hse_high_order_beta, hse_comm_cohesion_beta,
+                    hse_boundary_gamma)
+                scores = scores + hse_scores
             take = min(seed_target - added, cand_arr.size)
             if take <= 0:
                 break
@@ -461,6 +501,9 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                     break
             for node in new_nodes:
                 frontier.update(adj[node] - visited)
+                if use_hse:
+                    community_halo.update(adj[node])
+                    community_halo.add(node)
 
     while added < max_iter and frontier:
         cand_arr = np.array(list(frontier))
@@ -475,6 +518,13 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
             if span > 1e-12:
                 conn = (conn - conn.min()) / span
             scores = scores + connectivity_boost * conn
+
+        if use_hse:
+            hse_scores = _hse_candidate_scores(
+                q, cand_arr, visited, adj, community_halo,
+                hse_high_order_beta, hse_comm_cohesion_beta,
+                hse_boundary_gamma)
+            scores = scores + hse_scores
 
         take = min(frontier_batch_size, len(cand_arr), max_iter - added)
         if take <= 0:
@@ -493,6 +543,9 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
             frontier.discard(node)
             cur_sum += float(sims_q[node])
             frontier.update(adj[node] - visited)
+            if use_hse:
+                community_halo.update(adj[node])
+                community_halo.add(node)
             node_order.append(node)
             cum_sims.append(cur_sum)
             added += 1
@@ -546,7 +599,10 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             greedy_init_seed_size=1,
                             greedy_init_seed_hops=1,
                             greedy_init_seed_conn_beta=0.3,
-                            greedy_init_seed_min_sim=None):
+                            greedy_init_seed_min_sim=None,
+                            hse_high_order_beta=0.0,
+                            hse_comm_cohesion_beta=0.0,
+                            hse_boundary_gamma=0.0):
     """
     贪心 + 密度自适应的社区搜索评估。
 
@@ -603,7 +659,10 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             init_seed_size=greedy_init_seed_size,
             init_seed_hops=greedy_init_seed_hops,
             init_seed_conn_beta=greedy_init_seed_conn_beta,
-            init_seed_min_sim=greedy_init_seed_min_sim)
+            init_seed_min_sim=greedy_init_seed_min_sim,
+            hse_high_order_beta=hse_high_order_beta,
+            hse_comm_cohesion_beta=hse_comm_cohesion_beta,
+            hse_boundary_gamma=hse_boundary_gamma)
 
         for w in w_list:
             comm = _best_community_for_w(
@@ -901,7 +960,10 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      greedy_init_seed_size=1,
                                      greedy_init_seed_hops=1,
                                      greedy_init_seed_conn_beta=0.3,
-                                     greedy_init_seed_min_sim=None):
+                                     greedy_init_seed_min_sim=None,
+                                     hse_high_order_beta=0.0,
+                                     hse_comm_cohesion_beta=0.0,
+                                     hse_boundary_gamma=0.0):
     """
     动态意图 + 贪心扩展社区搜索。
     每个查询节点生成意图→重新编码→贪心扩展。
@@ -959,7 +1021,10 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             init_seed_size=greedy_init_seed_size,
             init_seed_hops=greedy_init_seed_hops,
             init_seed_conn_beta=greedy_init_seed_conn_beta,
-            init_seed_min_sim=greedy_init_seed_min_sim)
+            init_seed_min_sim=greedy_init_seed_min_sim,
+            hse_high_order_beta=hse_high_order_beta,
+            hse_comm_cohesion_beta=hse_comm_cohesion_beta,
+            hse_boundary_gamma=hse_boundary_gamma)
 
         for w in w_list:
             comm = _best_community_for_w(
