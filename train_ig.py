@@ -1124,6 +1124,8 @@ if __name__ == '__main__':
                         help='HSE-Greedy query-candidate high-order reachability weight')
     parser.add_argument('--greedy_comm_cohesion_beta', type=float, default=0.0,
                         help='HSE-Greedy candidate-to-community high-order cohesion weight')
+    parser.add_argument('--greedy_comm_direct_beta', type=float, default=0.0,
+                        help='HSE-Greedy candidate-to-current-community direct cohesion weight')
     parser.add_argument('--greedy_boundary_gamma', type=float, default=0.0,
                         help='HSE-Greedy boundary expansion penalty weight')
     parser.add_argument('--greedy_hse_pool_size', type=int, default=0,
@@ -1200,6 +1202,7 @@ if __name__ == '__main__':
           f"greedy_init_seed_conn_beta={args.greedy_init_seed_conn_beta} "
           f"greedy_high_order_beta={args.greedy_high_order_beta} "
           f"greedy_comm_cohesion_beta={args.greedy_comm_cohesion_beta} "
+          f"greedy_comm_direct_beta={args.greedy_comm_direct_beta} "
           f"greedy_boundary_gamma={args.greedy_boundary_gamma} "
           f"greedy_hse_pool_size={args.greedy_hse_pool_size} "
           f"include_query_in_pred={args.include_query_in_pred} "
@@ -1854,7 +1857,8 @@ if __name__ == '__main__':
             hse_high_order_beta=args.greedy_high_order_beta,
             hse_comm_cohesion_beta=args.greedy_comm_cohesion_beta,
             hse_boundary_gamma=args.greedy_boundary_gamma,
-            hse_pool_size=args.greedy_hse_pool_size
+            hse_pool_size=args.greedy_hse_pool_size,
+            hse_comm_direct_beta=args.greedy_comm_direct_beta
         )
     else:
         cs_results = community_search(emb, data, topk=cs_topk,
@@ -1881,7 +1885,8 @@ if __name__ == '__main__':
                                             hse_high_order_beta=args.greedy_high_order_beta,
                                             hse_comm_cohesion_beta=args.greedy_comm_cohesion_beta,
                                             hse_boundary_gamma=args.greedy_boundary_gamma,
-                                            hse_pool_size=args.greedy_hse_pool_size)
+                                            hse_pool_size=args.greedy_hse_pool_size,
+                                            hse_comm_direct_beta=args.greedy_comm_direct_beta)
 
     # Actor-Critic 社区搜索评测 (启用时)
     cs_rl = None

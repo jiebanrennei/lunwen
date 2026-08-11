@@ -64,7 +64,8 @@ Options:
   --greedy-init-seed-hops N   Greedy initial seed hops
   --greedy-high-order-beta X  HSE-Greedy query-candidate high-order reachability weight
   --greedy-comm-cohesion-beta X
-                              HSE-Greedy candidate-to-community cohesion weight
+                              HSE-Greedy candidate-to-community halo cohesion weight
+  --greedy-comm-direct-beta X HSE-Greedy candidate-to-current-community direct cohesion weight
   --greedy-boundary-gamma X   HSE-Greedy boundary expansion penalty weight
   --greedy-hse-pool-size N    Top-K frontier candidates scored by HSE; 0=full frontier
   -h, --help                  Show this help
@@ -82,7 +83,7 @@ Examples:
   bash run_batch.sh --ilssc-auto --id-ilssc -d ACM,DBLP,IMDB_NEW --intent-dist-k 16 --intent-dist-beta 0.5
   bash run_batch.sh --run-name scid_ilssc --profile scid_ilssc_auto -d ACM,DBLP,IMDB_NEW --intent-dist-beta 0.2 --intent-dist-stable
   bash run_batch.sh --run-name hidbr_ilssc --profile hidbr_ilssc_auto -d ACM,DBLP,IMDB_NEW --ilssc-high-order-beta 0.2
-  bash run_batch.sh --run-name hse_greedy --profile hidbr_ilssc_auto -d ACM,DBLP,IMDB_NEW --ilssc-high-order-beta 0.2 --greedy-high-order-beta 0.2 --greedy-comm-cohesion-beta 0.1 --greedy-boundary-gamma 0.05 --greedy-hse-pool-size 512
+  bash run_batch.sh --run-name hse_greedy --profile hidbr_ilssc_auto -d ACM,DBLP,IMDB_NEW --ilssc-high-order-beta 0.2 --greedy-high-order-beta 0.2 --greedy-comm-direct-beta 0.1 --greedy-comm-cohesion-beta 0.05 --greedy-boundary-gamma 0.03 --greedy-hse-pool-size 512
   bash run_batch.sh --run-name ilssc_auto -d ACM,DBLP,IMDB_NEW --profile ilssc_auto
   bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW --lambda-ilssc 0.1 --ilssc-seed-size 8 --greedy-init-seed-size 4 --greedy-init-seed-hops 2
   bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW -- --lambda_ilssc 0.1 --greedy_init_seed_size 4
@@ -354,6 +355,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --greedy-comm-cohesion-beta|--greedy_comm_cohesion_beta|--hse-comm-cohesion-beta|--hse_comm_cohesion_beta)
       add_train_arg "--greedy_comm_cohesion_beta"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --greedy-comm-direct-beta|--greedy_comm_direct_beta|--hse-comm-direct-beta|--hse_comm_direct_beta)
+      add_train_arg "--greedy_comm_direct_beta"
       add_train_arg "$2"
       shift 2
       ;;

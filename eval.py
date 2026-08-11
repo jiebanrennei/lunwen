@@ -326,8 +326,9 @@ def _limit_hse_pool(cand_arr, scores, pool_size):
 
 def _hse_candidate_scores(q, cand_arr, visited, adj, community_halo,
                           high_order_beta=0.0, comm_cohesion_beta=0.0,
-                          boundary_gamma=0.0):
-    if high_order_beta <= 0 and comm_cohesion_beta <= 0 and boundary_gamma <= 0:
+                          boundary_gamma=0.0, comm_direct_beta=0.0):
+    if (high_order_beta <= 0 and comm_cohesion_beta <= 0
+            and boundary_gamma <= 0 and comm_direct_beta <= 0):
         return None
     q_nbrs = adj[int(q)]
     q_deg = max(1, len(q_nbrs))
@@ -340,6 +341,9 @@ def _hse_candidate_scores(q, cand_arr, visited, adj, community_halo,
         if high_order_beta > 0:
             reach = len(q_nbrs & c_nbrs) / np.sqrt(q_deg * c_deg)
             scores[i] += high_order_beta * reach
+        if comm_direct_beta > 0:
+            direct = len(c_nbrs & visited_set) / c_deg
+            scores[i] += comm_direct_beta * direct
         if comm_cohesion_beta > 0:
             cohesion = len(c_nbrs & community_halo) / c_deg
             scores[i] += comm_cohesion_beta * cohesion
@@ -439,6 +443,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                          hse_comm_cohesion_beta=0.0,
                          hse_boundary_gamma=0.0,
                          hse_pool_size=0,
+                         hse_comm_direct_beta=0.0,
                          early_stop_w=None,
                          early_stop_avg=None,
                          early_stop_patience=0,
@@ -458,7 +463,9 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     hse_comm_cohesion_beta = max(0.0, float(hse_comm_cohesion_beta))
     hse_boundary_gamma = max(0.0, float(hse_boundary_gamma))
     hse_pool_size = max(0, int(hse_pool_size))
-    use_hse = (hse_high_order_beta > 0 or hse_comm_cohesion_beta > 0 or hse_boundary_gamma > 0)
+    hse_comm_direct_beta = max(0.0, float(hse_comm_direct_beta))
+    use_hse = (hse_high_order_beta > 0 or hse_comm_cohesion_beta > 0
+               or hse_boundary_gamma > 0 or hse_comm_direct_beta > 0)
     visited = {q}
     frontier = set(adj[q]) - visited
     cur_sum = float(sims_q[q])
@@ -513,7 +520,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                 hse_scores = _hse_candidate_scores(
                     q, cand_arr, visited, adj, community_halo,
                     hse_high_order_beta, hse_comm_cohesion_beta,
-                    hse_boundary_gamma)
+                    hse_boundary_gamma, hse_comm_direct_beta)
                 scores = scores + hse_scores
             take = min(seed_target - added, cand_arr.size)
             if take <= 0:
@@ -648,7 +655,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             hse_high_order_beta=0.0,
                             hse_comm_cohesion_beta=0.0,
                             hse_boundary_gamma=0.0,
-                            hse_pool_size=0):
+                            hse_pool_size=0,
+                            hse_comm_direct_beta=0.0):
     """
     贪心 + 密度自适应的社区搜索评估。
 
@@ -711,6 +719,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             hse_comm_cohesion_beta=hse_comm_cohesion_beta,
             hse_boundary_gamma=hse_boundary_gamma,
             hse_pool_size=hse_pool_size,
+            hse_comm_direct_beta=hse_comm_direct_beta,
             early_stop_w=early_w,
             early_stop_avg=avg,
             early_stop_patience=greedy_patience,
@@ -1017,7 +1026,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      hse_high_order_beta=0.0,
                                      hse_comm_cohesion_beta=0.0,
                                      hse_boundary_gamma=0.0,
-                                     hse_pool_size=0):
+                                     hse_pool_size=0,
+                                     hse_comm_direct_beta=0.0):
     """
     动态意图 + 贪心扩展社区搜索。
     每个查询节点生成意图→重新编码→贪心扩展。
@@ -1081,6 +1091,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             hse_comm_cohesion_beta=hse_comm_cohesion_beta,
             hse_boundary_gamma=hse_boundary_gamma,
             hse_pool_size=hse_pool_size,
+            hse_comm_direct_beta=hse_comm_direct_beta,
             early_stop_w=early_w,
             early_stop_avg=avg,
             early_stop_patience=greedy_patience,
