@@ -324,39 +324,61 @@ def _limit_hse_pool(cand_arr, scores, pool_size):
     return cand_arr[top_idx], scores[top_idx]
 
 
+def _minmax_norm(values):
+    values = values.astype(np.float64, copy=False)
+    span = float(values.max() - values.min()) if values.size > 0 else 0.0
+    if span <= 1e-12:
+        return np.zeros_like(values, dtype=np.float64)
+    return (values - values.min()) / span
+
+
 def _hse_candidate_scores(q, cand_arr, visited, adj, community_halo,
                           high_order_beta=0.0, comm_cohesion_beta=0.0,
-                          boundary_gamma=0.0, comm_direct_beta=0.0):
+                          boundary_gamma=0.0, comm_direct_beta=0.0,
+                          normalize=False):
     if (high_order_beta <= 0 and comm_cohesion_beta <= 0
             and boundary_gamma <= 0 and comm_direct_beta <= 0):
         return None
     q_nbrs = adj[int(q)]
     q_deg = max(1, len(q_nbrs))
     visited_set = visited if isinstance(visited, set) else set(visited)
-    scores = np.zeros(cand_arr.size, dtype=np.float64)
+    reach_vals = np.zeros(cand_arr.size, dtype=np.float64)
+    direct_vals = np.zeros(cand_arr.size, dtype=np.float64)
+    cohesion_vals = np.zeros(cand_arr.size, dtype=np.float64)
+    boundary_vals = np.zeros(cand_arr.size, dtype=np.float64)
     for i, c in enumerate(cand_arr):
         c = int(c)
         c_nbrs = adj[c]
         c_deg = max(1, len(c_nbrs))
         if high_order_beta > 0:
-            reach = len(q_nbrs & c_nbrs) / np.sqrt(q_deg * c_deg)
-            scores[i] += high_order_beta * reach
+            reach_vals[i] = len(q_nbrs & c_nbrs) / np.sqrt(q_deg * c_deg)
         if comm_direct_beta > 0:
-            direct = len(c_nbrs & visited_set) / c_deg
-            scores[i] += comm_direct_beta * direct
+            direct_vals[i] = len(c_nbrs & visited_set) / c_deg
         if comm_cohesion_beta > 0:
-            cohesion = len(c_nbrs & community_halo) / c_deg
-            scores[i] += comm_cohesion_beta * cohesion
+            cohesion_vals[i] = len(c_nbrs & community_halo) / c_deg
         if boundary_gamma > 0:
-            boundary = len(c_nbrs - community_halo - visited_set) / c_deg
-            scores[i] -= boundary_gamma * boundary
+            boundary_vals[i] = len(c_nbrs - community_halo - visited_set) / c_deg
+    if normalize:
+        if high_order_beta > 0:
+            reach_vals = _minmax_norm(reach_vals)
+        if comm_direct_beta > 0:
+            direct_vals = _minmax_norm(direct_vals)
+        if comm_cohesion_beta > 0:
+            cohesion_vals = _minmax_norm(cohesion_vals)
+        if boundary_gamma > 0:
+            boundary_vals = _minmax_norm(boundary_vals)
+    scores = np.zeros(cand_arr.size, dtype=np.float64)
+    scores += high_order_beta * reach_vals
+    scores += comm_direct_beta * direct_vals
+    scores += comm_cohesion_beta * cohesion_vals
+    scores -= boundary_gamma * boundary_vals
     return scores
 
 
 def _recall_expand_community(q, comm, sims_q, adj, max_add=0, pool_size=0,
                              min_sim=None, high_order_beta=0.0,
                              comm_direct_beta=0.0, comm_cohesion_beta=0.0,
-                             boundary_gamma=0.0):
+                             boundary_gamma=0.0, hse_normalize=False):
     max_add = max(0, int(max_add))
     if max_add <= 0 or not comm:
         return comm
@@ -381,7 +403,8 @@ def _recall_expand_community(q, comm, sims_q, adj, max_add=0, pool_size=0,
         community_halo.update(adj[v])
     hse_scores = _hse_candidate_scores(
         q, cand_arr, comm, adj, community_halo,
-        high_order_beta, comm_cohesion_beta, boundary_gamma, comm_direct_beta)
+        high_order_beta, comm_cohesion_beta, boundary_gamma,
+        comm_direct_beta, normalize=hse_normalize)
     if hse_scores is not None:
         scores = scores + hse_scores
     take = min(max_add, cand_arr.size)
@@ -484,6 +507,8 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                          hse_boundary_gamma=0.0,
                          hse_pool_size=0,
                          hse_comm_direct_beta=0.0,
+                         hse_normalize=False,
+                         hse_density=False,
                          early_stop_w=None,
                          early_stop_avg=None,
                          early_stop_patience=0,
@@ -504,6 +529,8 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     hse_boundary_gamma = max(0.0, float(hse_boundary_gamma))
     hse_pool_size = max(0, int(hse_pool_size))
     hse_comm_direct_beta = max(0.0, float(hse_comm_direct_beta))
+    hse_normalize = bool(hse_normalize)
+    hse_density = bool(hse_density)
     use_hse = (hse_high_order_beta > 0 or hse_comm_cohesion_beta > 0
                or hse_boundary_gamma > 0 or hse_comm_direct_beta > 0)
     visited = {q}
@@ -520,6 +547,16 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     early_stop_min_size = max(1, int(early_stop_min_size))
     early_best_density = None
     early_bad_steps = 0
+
+    def _utility_map(cand_arr, scores):
+        if not hse_density:
+            return {}
+        return {int(c): float(s) for c, s in zip(cand_arr.tolist(), scores.tolist())}
+
+    def _node_utility(node, utilities):
+        if not hse_density:
+            return float(sims_q[node])
+        return float(utilities.get(int(node), sims_q[node]))
 
     def _should_stop_trace():
         nonlocal early_best_density, early_bad_steps
@@ -560,8 +597,10 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                 hse_scores = _hse_candidate_scores(
                     q, cand_arr, visited, adj, community_halo,
                     hse_high_order_beta, hse_comm_cohesion_beta,
-                    hse_boundary_gamma, hse_comm_direct_beta)
+                    hse_boundary_gamma, hse_comm_direct_beta,
+                    normalize=hse_normalize)
                 scores = scores + hse_scores
+            selected_utilities = _utility_map(cand_arr, scores)
             take = min(seed_target - added, cand_arr.size)
             if take <= 0:
                 break
@@ -577,7 +616,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                     continue
                 visited.add(node)
                 frontier.discard(node)
-                cur_sum += float(sims_q[node])
+                cur_sum += _node_utility(node, selected_utilities)
                 node_order.append(node)
                 cum_sims.append(cur_sum)
                 added += 1
@@ -609,8 +648,10 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
             hse_scores = _hse_candidate_scores(
                 q, cand_arr, visited, adj, community_halo,
                 hse_high_order_beta, hse_comm_cohesion_beta,
-                hse_boundary_gamma)
+                hse_boundary_gamma, hse_comm_direct_beta,
+                normalize=hse_normalize)
             scores = scores + hse_scores
+        selected_utilities = _utility_map(cand_arr, scores)
 
         take = min(frontier_batch_size, len(cand_arr), max_iter - added)
         if take <= 0:
@@ -628,7 +669,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                 continue
             visited.add(node)
             frontier.discard(node)
-            cur_sum += float(sims_q[node])
+            cur_sum += _node_utility(node, selected_utilities)
             frontier.update(adj[node] - visited)
             if use_hse:
                 community_halo.update(adj[node])
@@ -697,6 +738,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             hse_boundary_gamma=0.0,
                             hse_pool_size=0,
                             hse_comm_direct_beta=0.0,
+                            hse_normalize=False,
+                            hse_density=False,
                             recall_expand_size=0,
                             recall_expand_min_sim_delta=0.0):
     """
@@ -746,6 +789,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
 
         sims_q = sims[q]
         avg = float(sims_q.mean())
+        density_avg = 0.0 if hse_density else avg
         early_w = w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None
 
         # 只扩展一次
@@ -762,15 +806,17 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             hse_boundary_gamma=hse_boundary_gamma,
             hse_pool_size=hse_pool_size,
             hse_comm_direct_beta=hse_comm_direct_beta,
+            hse_normalize=hse_normalize,
+            hse_density=hse_density,
             early_stop_w=early_w,
-            early_stop_avg=avg,
+            early_stop_avg=density_avg,
             early_stop_patience=greedy_patience,
             early_stop_min_gain_tol=greedy_min_gain_tol,
             early_stop_min_size=greedy_init_seed_size)
 
         for w in w_list:
             comm = _best_community_for_w(
-                node_order, cum_sims, avg, w,
+                node_order, cum_sims, density_avg, w,
                 patience=greedy_patience,
                 min_gain_tol=greedy_min_gain_tol,
                 select_mode=greedy_select_mode,
@@ -784,7 +830,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                     high_order_beta=hse_high_order_beta,
                     comm_direct_beta=hse_comm_direct_beta,
                     comm_cohesion_beta=hse_comm_cohesion_beta,
-                    boundary_gamma=hse_boundary_gamma)
+                    boundary_gamma=hse_boundary_gamma,
+                    hse_normalize=hse_normalize)
             pred = set(comm)
             if not include_query_in_pred:
                 pred.discard(int(q))
@@ -1080,6 +1127,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      hse_boundary_gamma=0.0,
                                      hse_pool_size=0,
                                      hse_comm_direct_beta=0.0,
+                                     hse_normalize=False,
+                                     hse_density=False,
                                      recall_expand_size=0,
                                      recall_expand_min_sim_delta=0.0):
     """
@@ -1132,6 +1181,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             sims_q = sims_q * mult
 
         avg = float(sims_q.mean())
+        density_avg = 0.0 if hse_density else avg
         early_w = w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None
         node_order, cum_sims = _greedy_expand_trace(
             q, sims_q, adj, max_iter,
@@ -1146,15 +1196,17 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             hse_boundary_gamma=hse_boundary_gamma,
             hse_pool_size=hse_pool_size,
             hse_comm_direct_beta=hse_comm_direct_beta,
+            hse_normalize=hse_normalize,
+            hse_density=hse_density,
             early_stop_w=early_w,
-            early_stop_avg=avg,
+            early_stop_avg=density_avg,
             early_stop_patience=greedy_patience,
             early_stop_min_gain_tol=greedy_min_gain_tol,
             early_stop_min_size=greedy_init_seed_size)
 
         for w in w_list:
             comm = _best_community_for_w(
-                node_order, cum_sims, avg, w,
+                node_order, cum_sims, density_avg, w,
                 patience=greedy_patience,
                 min_gain_tol=greedy_min_gain_tol,
                 select_mode=greedy_select_mode,
@@ -1168,7 +1220,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                     high_order_beta=hse_high_order_beta,
                     comm_direct_beta=hse_comm_direct_beta,
                     comm_cohesion_beta=hse_comm_cohesion_beta,
-                    boundary_gamma=hse_boundary_gamma)
+                    boundary_gamma=hse_boundary_gamma,
+                    hse_normalize=hse_normalize)
             pred = set(comm)
             if not include_query_in_pred:
                 pred.discard(int(q))

@@ -948,8 +948,10 @@ if __name__ == '__main__':
                         help='存在检查点则从中断处继续训练')
     parser.add_argument('--eval_only', action='store_true',
                         help='Load ckpt_path and skip training; useful for sweeping CS/search params')
+    parser.add_argument('--model_name', type=str, default=None,
+                        help='Name used in default checkpoint path; separates reusable trained models')
     parser.add_argument('--ckpt_path', type=str, default=None,
-                        help='检查点路径; None=checkpoints/ckpt_{dataset}_{encoder}.pt')
+                        help='检查点路径; None=checkpoints/ckpt_{model_name}_{dataset}_{encoder}.pt or ckpt_{dataset}_{encoder}.pt')
     parser.add_argument('--ckpt_interval', type=int, default=1,
                         help='每 N 轮保存一次最新检查点(覆盖旧的); 0=不保存')
     # 多关系 + ICRA 融合 (创新点: 意图条件化关系注意力)
@@ -1132,6 +1134,10 @@ if __name__ == '__main__':
                         help='HSE-Greedy boundary expansion penalty weight')
     parser.add_argument('--greedy_hse_pool_size', type=int, default=0,
                         help='Top-K frontier candidates scored by HSE; 0 uses the full frontier')
+    parser.add_argument('--greedy_hse_normalize', action='store_true',
+                        help='Normalize each HSE structural term inside the current candidate pool')
+    parser.add_argument('--greedy_hse_density', action='store_true',
+                        help='Use HSE-adjusted selected utility for greedy density selection and early stop')
     parser.add_argument('--greedy_recall_expand_size', type=int, default=0,
                         help='Add up to N high-order frontier nodes after HSE core community selection')
     parser.add_argument('--greedy_recall_min_sim_delta', type=float, default=0.0,
@@ -1211,10 +1217,13 @@ if __name__ == '__main__':
           f"greedy_comm_direct_beta={args.greedy_comm_direct_beta} "
           f"greedy_boundary_gamma={args.greedy_boundary_gamma} "
           f"greedy_hse_pool_size={args.greedy_hse_pool_size} "
+          f"greedy_hse_normalize={args.greedy_hse_normalize} "
+          f"greedy_hse_density={args.greedy_hse_density} "
           f"greedy_recall_expand_size={args.greedy_recall_expand_size} "
           f"greedy_recall_min_sim_delta={args.greedy_recall_min_sim_delta} "
           f"include_query_in_pred={args.include_query_in_pred} "
           f"eval_perturb={args.eval_perturb_mode}:{args.eval_perturb_rate} "
+          f"model_name={args.model_name} "
           f"seed={args.seed}")
 
     print("Using CPU")
@@ -1351,8 +1360,9 @@ if __name__ == '__main__':
 
     # ========== 断点续训 (checkpoint / resume) ==========
     # 每轮把最新状态原子写入单个文件(覆盖旧的); 崩溃后 --resume 从中断处继续。
-    ckpt_path = args.ckpt_path or osp.join(
-        'checkpoints', f'ckpt_{args.dataset}_{args.encoder}.pt')
+    ckpt_name = (f'ckpt_{args.model_name}_{args.dataset}_{args.encoder}.pt'
+                 if args.model_name else f'ckpt_{args.dataset}_{args.encoder}.pt')
+    ckpt_path = args.ckpt_path or osp.join('checkpoints', ckpt_name)
     os.makedirs(osp.dirname(ckpt_path) or '.', exist_ok=True)
 
     def _save_ckpt(path, epoch, train_elapsed):
@@ -1878,6 +1888,8 @@ if __name__ == '__main__':
             hse_boundary_gamma=args.greedy_boundary_gamma,
             hse_pool_size=args.greedy_hse_pool_size,
             hse_comm_direct_beta=args.greedy_comm_direct_beta,
+            hse_normalize=args.greedy_hse_normalize,
+            hse_density=args.greedy_hse_density,
             recall_expand_size=args.greedy_recall_expand_size,
             recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta
         )
@@ -1908,6 +1920,8 @@ if __name__ == '__main__':
                                             hse_boundary_gamma=args.greedy_boundary_gamma,
                                             hse_pool_size=args.greedy_hse_pool_size,
                                             hse_comm_direct_beta=args.greedy_comm_direct_beta,
+                                            hse_normalize=args.greedy_hse_normalize,
+                                            hse_density=args.greedy_hse_density,
                                             recall_expand_size=args.greedy_recall_expand_size,
                                             recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta)
 
