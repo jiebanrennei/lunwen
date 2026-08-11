@@ -68,6 +68,10 @@ Options:
   --greedy-comm-direct-beta X HSE-Greedy candidate-to-current-community direct cohesion weight
   --greedy-boundary-gamma X   HSE-Greedy boundary expansion penalty weight
   --greedy-hse-pool-size N    Top-K frontier candidates scored by HSE; 0=full frontier
+  --greedy-recall-expand-size N
+                              Add up to N high-order frontier nodes after core community selection
+  --greedy-recall-min-sim-delta X
+                              Fallback candidate min similarity = avg_sim + X
   -h, --help                  Show this help
 
 Examples:
@@ -83,7 +87,7 @@ Examples:
   bash run_batch.sh --ilssc-auto --id-ilssc -d ACM,DBLP,IMDB_NEW --intent-dist-k 16 --intent-dist-beta 0.5
   bash run_batch.sh --run-name scid_ilssc --profile scid_ilssc_auto -d ACM,DBLP,IMDB_NEW --intent-dist-beta 0.2 --intent-dist-stable
   bash run_batch.sh --run-name hidbr_ilssc --profile hidbr_ilssc_auto -d ACM,DBLP,IMDB_NEW --ilssc-high-order-beta 0.2
-  bash run_batch.sh --run-name hse_greedy --profile hidbr_ilssc_auto -d ACM,DBLP,IMDB_NEW --ilssc-high-order-beta 0.2 --greedy-high-order-beta 0.2 --greedy-comm-direct-beta 0.1 --greedy-comm-cohesion-beta 0.05 --greedy-boundary-gamma 0.03 --greedy-hse-pool-size 512
+  bash run_batch.sh --run-name hse_greedy --profile hidbr_ilssc_auto -d ACM,DBLP,IMDB_NEW --ilssc-high-order-beta 0.2 --greedy-high-order-beta 0.2 --greedy-comm-direct-beta 0.1 --greedy-comm-cohesion-beta 0.05 --greedy-boundary-gamma 0.03 --greedy-hse-pool-size 512 --greedy-recall-expand-size 128
   bash run_batch.sh --run-name ilssc_auto -d ACM,DBLP,IMDB_NEW --profile ilssc_auto
   bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW --lambda-ilssc 0.1 --ilssc-seed-size 8 --greedy-init-seed-size 4 --greedy-init-seed-hops 2
   bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW -- --lambda_ilssc 0.1 --greedy_init_seed_size 4
@@ -370,6 +374,16 @@ while [[ $# -gt 0 ]]; do
       ;;
     --greedy-hse-pool-size|--greedy_hse_pool_size|--hse-pool-size|--hse_pool_size)
       add_train_arg "--greedy_hse_pool_size"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --greedy-recall-expand-size|--greedy_recall_expand_size|--hse-recall-expand-size|--hse_recall_expand_size)
+      add_train_arg "--greedy_recall_expand_size"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --greedy-recall-min-sim-delta|--greedy_recall_min_sim_delta|--hse-recall-min-sim-delta|--hse_recall_min_sim_delta)
+      add_train_arg "--greedy_recall_min_sim_delta"
       add_train_arg "$2"
       shift 2
       ;;

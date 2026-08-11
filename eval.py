@@ -353,6 +353,46 @@ def _hse_candidate_scores(q, cand_arr, visited, adj, community_halo,
     return scores
 
 
+def _recall_expand_community(q, comm, sims_q, adj, max_add=0, pool_size=0,
+                             min_sim=None, high_order_beta=0.0,
+                             comm_direct_beta=0.0, comm_cohesion_beta=0.0,
+                             boundary_gamma=0.0):
+    max_add = max(0, int(max_add))
+    if max_add <= 0 or not comm:
+        return comm
+    comm = set(int(v) for v in comm)
+    frontier = set()
+    for v in comm:
+        frontier.update(adj[v])
+    frontier.difference_update(comm)
+    if not frontier:
+        return comm
+    cand_arr = np.array(list(frontier), dtype=np.int64)
+    scores = sims_q[cand_arr].astype(np.float64, copy=True)
+    if min_sim is not None:
+        keep = scores >= float(min_sim)
+        cand_arr = cand_arr[keep]
+        scores = scores[keep]
+        if cand_arr.size == 0:
+            return comm
+    cand_arr, scores = _limit_hse_pool(cand_arr, scores, pool_size)
+    community_halo = set(comm)
+    for v in comm:
+        community_halo.update(adj[v])
+    hse_scores = _hse_candidate_scores(
+        q, cand_arr, comm, adj, community_halo,
+        high_order_beta, comm_cohesion_beta, boundary_gamma, comm_direct_beta)
+    if hse_scores is not None:
+        scores = scores + hse_scores
+    take = min(max_add, cand_arr.size)
+    if take <= 0:
+        return comm
+    chosen_idx = np.argpartition(-scores, take - 1)[:take]
+    chosen_idx = chosen_idx[np.argsort(-scores[chosen_idx])]
+    comm.update(int(cand_arr[i]) for i in chosen_idx)
+    return comm
+
+
 def _bfs_farthest(start, node_set, adj):
     """从 start 出发在 node_set 诱导子图上 BFS,返回 (最远节点, 最远距离)。"""
     dist = {start: 0}
@@ -656,7 +696,9 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             hse_comm_cohesion_beta=0.0,
                             hse_boundary_gamma=0.0,
                             hse_pool_size=0,
-                            hse_comm_direct_beta=0.0):
+                            hse_comm_direct_beta=0.0,
+                            recall_expand_size=0,
+                            recall_expand_min_sim_delta=0.0):
     """
     贪心 + 密度自适应的社区搜索评估。
 
@@ -733,6 +775,16 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                 min_gain_tol=greedy_min_gain_tol,
                 select_mode=greedy_select_mode,
                 min_size=greedy_init_seed_size)
+            if recall_expand_size > 0:
+                comm = _recall_expand_community(
+                    q, comm, sims_q, adj,
+                    max_add=recall_expand_size,
+                    pool_size=hse_pool_size,
+                    min_sim=avg + float(recall_expand_min_sim_delta),
+                    high_order_beta=hse_high_order_beta,
+                    comm_direct_beta=hse_comm_direct_beta,
+                    comm_cohesion_beta=hse_comm_cohesion_beta,
+                    boundary_gamma=hse_boundary_gamma)
             pred = set(comm)
             if not include_query_in_pred:
                 pred.discard(int(q))
@@ -1027,7 +1079,9 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      hse_comm_cohesion_beta=0.0,
                                      hse_boundary_gamma=0.0,
                                      hse_pool_size=0,
-                                     hse_comm_direct_beta=0.0):
+                                     hse_comm_direct_beta=0.0,
+                                     recall_expand_size=0,
+                                     recall_expand_min_sim_delta=0.0):
     """
     动态意图 + 贪心扩展社区搜索。
     每个查询节点生成意图→重新编码→贪心扩展。
@@ -1105,6 +1159,16 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                 min_gain_tol=greedy_min_gain_tol,
                 select_mode=greedy_select_mode,
                 min_size=greedy_init_seed_size)
+            if recall_expand_size > 0:
+                comm = _recall_expand_community(
+                    q, comm, sims_q, adj,
+                    max_add=recall_expand_size,
+                    pool_size=hse_pool_size,
+                    min_sim=avg + float(recall_expand_min_sim_delta),
+                    high_order_beta=hse_high_order_beta,
+                    comm_direct_beta=hse_comm_direct_beta,
+                    comm_cohesion_beta=hse_comm_cohesion_beta,
+                    boundary_gamma=hse_boundary_gamma)
             pred = set(comm)
             if not include_query_in_pred:
                 pred.discard(int(q))

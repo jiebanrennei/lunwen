@@ -1130,6 +1130,10 @@ if __name__ == '__main__':
                         help='HSE-Greedy boundary expansion penalty weight')
     parser.add_argument('--greedy_hse_pool_size', type=int, default=0,
                         help='Top-K frontier candidates scored by HSE; 0 uses the full frontier')
+    parser.add_argument('--greedy_recall_expand_size', type=int, default=0,
+                        help='Add up to N high-order frontier nodes after HSE core community selection')
+    parser.add_argument('--greedy_recall_min_sim_delta', type=float, default=0.0,
+                        help='Minimum fallback candidate similarity as avg_sim + delta')
     parser.add_argument('--include_query_in_pred', action='store_true',
                         help='Include query node in both predicted and truth communities during greedy CS evaluation')
     parser.add_argument('--eval_perturb_mode', type=str, default='none',
@@ -1205,6 +1209,8 @@ if __name__ == '__main__':
           f"greedy_comm_direct_beta={args.greedy_comm_direct_beta} "
           f"greedy_boundary_gamma={args.greedy_boundary_gamma} "
           f"greedy_hse_pool_size={args.greedy_hse_pool_size} "
+          f"greedy_recall_expand_size={args.greedy_recall_expand_size} "
+          f"greedy_recall_min_sim_delta={args.greedy_recall_min_sim_delta} "
           f"include_query_in_pred={args.include_query_in_pred} "
           f"eval_perturb={args.eval_perturb_mode}:{args.eval_perturb_rate} "
           f"seed={args.seed}")
@@ -1858,7 +1864,9 @@ if __name__ == '__main__':
             hse_comm_cohesion_beta=args.greedy_comm_cohesion_beta,
             hse_boundary_gamma=args.greedy_boundary_gamma,
             hse_pool_size=args.greedy_hse_pool_size,
-            hse_comm_direct_beta=args.greedy_comm_direct_beta
+            hse_comm_direct_beta=args.greedy_comm_direct_beta,
+            recall_expand_size=args.greedy_recall_expand_size,
+            recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta
         )
     else:
         cs_results = community_search(emb, data, topk=cs_topk,
@@ -1886,7 +1894,9 @@ if __name__ == '__main__':
                                             hse_comm_cohesion_beta=args.greedy_comm_cohesion_beta,
                                             hse_boundary_gamma=args.greedy_boundary_gamma,
                                             hse_pool_size=args.greedy_hse_pool_size,
-                                            hse_comm_direct_beta=args.greedy_comm_direct_beta)
+                                            hse_comm_direct_beta=args.greedy_comm_direct_beta,
+                                            recall_expand_size=args.greedy_recall_expand_size,
+                                            recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta)
 
     # Actor-Critic 社区搜索评测 (启用时)
     cs_rl = None
