@@ -946,6 +946,8 @@ if __name__ == '__main__':
     # 断点续训 (checkpoint / resume)
     parser.add_argument('--resume', action='store_true',
                         help='存在检查点则从中断处继续训练')
+    parser.add_argument('--eval_only', action='store_true',
+                        help='Load ckpt_path and skip training; useful for sweeping CS/search params')
     parser.add_argument('--ckpt_path', type=str, default=None,
                         help='检查点路径; None=checkpoints/ckpt_{dataset}_{encoder}.pt')
     parser.add_argument('--ckpt_interval', type=int, default=1,
@@ -1391,7 +1393,14 @@ if __name__ == '__main__':
         return ckpt['epoch'] + 1, ckpt.get('train_elapsed', 0.0)
 
     start_epoch, train_elapsed_prev = 1, 0.0
-    if args.resume and osp.exists(ckpt_path):
+    if args.eval_only:
+        if not osp.exists(ckpt_path):
+            raise FileNotFoundError(f'--eval_only 需要已有检查点: {ckpt_path}')
+        loaded_next_epoch, train_elapsed_prev = _load_ckpt(ckpt_path)
+        start_epoch = args.num_epochs + 1
+        print(f'[ckpt] eval-only 从 {ckpt_path} 加载, '
+              f'检查点已完成 {loaded_next_epoch - 1} 轮, 跳过训练')
+    elif args.resume and osp.exists(ckpt_path):
         start_epoch, train_elapsed_prev = _load_ckpt(ckpt_path)
         print(f'[ckpt] 从 {ckpt_path} 恢复, 已完成 {start_epoch - 1} 轮, '
               f'从第 {start_epoch} 轮继续')
@@ -1752,6 +1761,10 @@ if __name__ == '__main__':
         # 每轮保存最新检查点(覆盖旧的), 供中断后 --resume 续训
         if args.ckpt_interval > 0 and epoch % args.ckpt_interval == 0:
             _save_ckpt(ckpt_path, epoch, now - start)
+
+    if not args.eval_only and epoch >= start_epoch:
+        _save_ckpt(ckpt_path, epoch, t() - start)
+        print(f'[ckpt] final checkpoint saved -> {ckpt_path}')
 
     train_time = t() - start            # 训练总耗时
     eval_start = t()                    # 评估(测试)起点
