@@ -551,7 +551,11 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     def _utility_map(cand_arr, scores):
         if not hse_density:
             return {}
-        return {int(c): float(s) for c, s in zip(cand_arr.tolist(), scores.tolist())}
+        raw_scores = sims_q[cand_arr].astype(np.float64, copy=False)
+        adjust = scores.astype(np.float64, copy=False) - raw_scores
+        adjust = adjust - float(adjust.mean()) if adjust.size > 0 else adjust
+        utilities = raw_scores + adjust
+        return {int(c): float(u) for c, u in zip(cand_arr.tolist(), utilities.tolist())}
 
     def _node_utility(node, utilities):
         if not hse_density:
@@ -789,7 +793,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
 
         sims_q = sims[q]
         avg = float(sims_q.mean())
-        density_avg = 0.0 if hse_density else avg
+        density_avg = avg
         early_w = w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None
 
         # 只扩展一次
@@ -1181,7 +1185,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             sims_q = sims_q * mult
 
         avg = float(sims_q.mean())
-        density_avg = 0.0 if hse_density else avg
+        density_avg = avg
         early_w = w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None
         node_order, cum_sims = _greedy_expand_trace(
             q, sims_q, adj, max_iter,
