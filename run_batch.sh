@@ -79,6 +79,7 @@ Options:
   --idbr-bridge-steps LIST    Diffusion steps, e.g. 2,4 or 2,4,6
   --idbr-bridge-decay X       Per-step decay for IDBR bridge
   --idbr-bridge-max-states N  Max sparse states kept per query diffusion step
+  --idbr-bridge-fanout N      Top query-similar neighbors expanded per diffusion state; 0=all
   --greedy-recall-expand-size N
                               Add up to N high-order frontier nodes after core community selection
   --greedy-recall-min-sim-delta X
@@ -434,6 +435,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --idbr-bridge-max-states|--idbr_bridge_max_states)
       add_train_arg "--idbr_bridge_max_states"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-bridge-fanout|--idbr_bridge_fanout)
+      add_train_arg "--idbr_bridge_fanout"
       add_train_arg "$2"
       shift 2
       ;;

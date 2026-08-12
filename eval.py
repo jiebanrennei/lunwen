@@ -375,24 +375,36 @@ def _hse_candidate_scores(q, cand_arr, visited, adj, community_halo,
     return scores
 
 
-def _idbr_diffusion_bridge(q, adj, steps=(2, 4), decay=1.0, max_states=50000):
+def _idbr_diffusion_bridge(q, adj, steps=(2, 4), decay=1.0, max_states=50000,
+                           sims_q=None, fanout=0):
     steps = tuple(sorted({int(s) for s in steps if int(s) > 0}))
     if not steps:
         return None
     max_step = max(steps)
     max_states = max(1, int(max_states))
+    fanout = max(0, int(fanout))
     decay = max(0.0, float(decay))
     cur = {int(q): 1.0}
     scores = {}
+
+    def _neighbors(u):
+        nbrs = adj[int(u)]
+        if fanout <= 0 or sims_q is None or len(nbrs) <= fanout:
+            return nbrs
+        arr = np.fromiter(nbrs, dtype=np.int64)
+        vals = sims_q[arr]
+        top_idx = np.argpartition(-vals, fanout - 1)[:fanout]
+        return arr[top_idx].tolist()
+
     for step in range(1, max_step + 1):
         nxt = {}
         for u, prob in cur.items():
-            nbrs = adj[int(u)]
+            nbrs = _neighbors(u)
             if not nbrs:
                 continue
             share = prob / float(len(nbrs))
             for v in nbrs:
-                nxt[v] = nxt.get(v, 0.0) + share
+                nxt[int(v)] = nxt.get(int(v), 0.0) + share
         if len(nxt) > max_states:
             top = sorted(nxt.items(), key=lambda x: x[1], reverse=True)[:max_states]
             total = sum(v for _, v in top)
@@ -808,6 +820,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             idbr_bridge_steps=(2, 4),
                             idbr_bridge_decay=1.0,
                             idbr_bridge_max_states=50000,
+                            idbr_bridge_fanout=0,
                             recall_expand_size=0,
                             recall_expand_min_sim_delta=0.0):
     """
@@ -861,7 +874,9 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
         bridge_scores = _idbr_diffusion_bridge(
             q, adj, steps=idbr_bridge_steps,
             decay=idbr_bridge_decay,
-            max_states=idbr_bridge_max_states) if idbr_bridge_beta > 0 else None
+            max_states=idbr_bridge_max_states,
+            sims_q=sims_q,
+            fanout=idbr_bridge_fanout) if idbr_bridge_beta > 0 else None
         early_w = w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None
 
         # 只扩展一次
@@ -1209,6 +1224,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      idbr_bridge_steps=(2, 4),
                                      idbr_bridge_decay=1.0,
                                      idbr_bridge_max_states=50000,
+                                     idbr_bridge_fanout=0,
                                      recall_expand_size=0,
                                      recall_expand_min_sim_delta=0.0):
     """
@@ -1265,7 +1281,9 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
         bridge_scores = _idbr_diffusion_bridge(
             q, adj, steps=idbr_bridge_steps,
             decay=idbr_bridge_decay,
-            max_states=idbr_bridge_max_states) if idbr_bridge_beta > 0 else None
+            max_states=idbr_bridge_max_states,
+            sims_q=sims_q,
+            fanout=idbr_bridge_fanout) if idbr_bridge_beta > 0 else None
         early_w = w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None
         node_order, cum_sims = _greedy_expand_trace(
             q, sims_q, adj, max_iter,

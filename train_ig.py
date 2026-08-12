@@ -1148,6 +1148,8 @@ if __name__ == '__main__':
                         help='Per-step decay for IDBR diffusion bridge')
     parser.add_argument('--idbr_bridge_max_states', type=int, default=50000,
                         help='Max sparse states kept per query diffusion step')
+    parser.add_argument('--idbr_bridge_fanout', type=int, default=0,
+                        help='Top query-similar neighbors expanded per diffusion state; 0 expands all neighbors')
     parser.add_argument('--greedy_recall_expand_size', type=int, default=0,
                         help='Add up to N high-order frontier nodes after HSE core community selection')
     parser.add_argument('--greedy_recall_min_sim_delta', type=float, default=0.0,
@@ -1235,6 +1237,7 @@ if __name__ == '__main__':
           f"idbr_bridge_steps={idbr_bridge_steps} "
           f"idbr_bridge_decay={args.idbr_bridge_decay} "
           f"idbr_bridge_max_states={args.idbr_bridge_max_states} "
+          f"idbr_bridge_fanout={args.idbr_bridge_fanout} "
           f"greedy_recall_expand_size={args.greedy_recall_expand_size} "
           f"greedy_recall_min_sim_delta={args.greedy_recall_min_sim_delta} "
           f"include_query_in_pred={args.include_query_in_pred} "
@@ -1410,8 +1413,20 @@ if __name__ == '__main__':
         optimizer_adv.load_state_dict(ckpt['optimizer_adv'])
         if intent_generator is not None and ckpt.get('intent_generator'):
             intent_generator.load_state_dict(ckpt['intent_generator'])
-        rng_q.set_state(ckpt['rng_q'])
-        torch.set_rng_state(ckpt['torch_rng'])
+        rng_state = ckpt.get('rng_q')
+        if isinstance(rng_state, torch.ByteTensor):
+            rng_q.set_state(rng_state)
+        elif isinstance(rng_state, torch.Tensor) and rng_state.dtype == torch.uint8:
+            rng_q.set_state(rng_state.cpu())
+        elif rng_state is not None:
+            print(f"[ckpt] warning: 跳过不兼容 rng_q 状态: {type(rng_state)}")
+        torch_rng = ckpt.get('torch_rng')
+        if isinstance(torch_rng, torch.ByteTensor):
+            torch.set_rng_state(torch_rng.cpu())
+        elif isinstance(torch_rng, torch.Tensor) and torch_rng.dtype == torch.uint8:
+            torch.set_rng_state(torch_rng.cpu())
+        elif torch_rng is not None:
+            print(f"[ckpt] warning: 跳过不兼容 torch_rng 状态: {type(torch_rng)}")
         if ckpt.get('numpy_rng') is not None:
             np.random.set_state(ckpt['numpy_rng'])
         if ckpt.get('python_rng') is not None:
@@ -1911,6 +1926,7 @@ if __name__ == '__main__':
             idbr_bridge_steps=idbr_bridge_steps,
             idbr_bridge_decay=args.idbr_bridge_decay,
             idbr_bridge_max_states=args.idbr_bridge_max_states,
+            idbr_bridge_fanout=args.idbr_bridge_fanout,
             recall_expand_size=args.greedy_recall_expand_size,
             recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta
         )
@@ -1948,6 +1964,7 @@ if __name__ == '__main__':
                                             idbr_bridge_steps=idbr_bridge_steps,
                                             idbr_bridge_decay=args.idbr_bridge_decay,
                                             idbr_bridge_max_states=args.idbr_bridge_max_states,
+                                            idbr_bridge_fanout=args.idbr_bridge_fanout,
                                             recall_expand_size=args.greedy_recall_expand_size,
                                             recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta)
 
