@@ -898,9 +898,16 @@ def build_idbr_bridge_loss(z_rec, qc_adj, args, rng_q):
     B = max(1, int(getattr(args, 'idbr_bridge_train_queries', 8)))
     P = max(1, int(getattr(args, 'idbr_bridge_train_pos', 8)))
     K = max(1, int(getattr(args, 'idbr_bridge_train_neg', 64)))
+    BN = max(0, int(getattr(args, 'idbr_boundary_neg', 0)))
+    boundary_pool = max(P + BN, int(getattr(args, 'idbr_boundary_neg_pool', 128)))
+    pos_sim_beta = float(getattr(args, 'idbr_bridge_pos_sim_beta', 0.3))
+    pos_cohesion_beta = float(getattr(args, 'idbr_bridge_pos_cohesion_beta', 0.5))
+    margin = float(getattr(args, 'idbr_boundary_margin', 0.2))
+    margin_weight = float(getattr(args, 'idbr_boundary_margin_weight', 0.0))
     z_norm = F.normalize(z_rec, dim=-1)
     losses = []
     pos_bridge_stats, pos_sim_stats, neg_sim_stats = [], [], []
+    boundary_sim_stats, boundary_cohesion_stats, margin_stats = [], [], []
     q_list = torch.randint(0, N, (B,), generator=rng_q).tolist()
     for qi in q_list:
         qi = int(qi)
@@ -920,11 +927,43 @@ def build_idbr_bridge_loss(z_rec, qc_adj, args, rng_q):
                 cand_scores[cand] = cand_scores.get(cand, 0.0) + contrib
         if not cand_scores:
             continue
-        top_items = sorted(cand_scores.items(), key=lambda x: x[1], reverse=True)[:P]
-        pos_ids = [node for node, _ in top_items]
-        if not pos_ids:
+        bridge_items = sorted(cand_scores.items(), key=lambda x: x[1], reverse=True)[:boundary_pool]
+        cand_ids = [node for node, _ in bridge_items]
+        cand_bridge = torch.tensor([score for _, score in bridge_items], dtype=torch.float, device=dev)
+        cand_t = torch.tensor(cand_ids, device=dev)
+        q_vec = z_norm[qi]
+        cand_sim = q_vec @ z_norm[cand_t].t()
+        cohesion_vals = []
+        for cand in cand_ids:
+            c_nbrs = qc_adj[int(cand)]
+            if c_nbrs:
+                cohesion_vals.append(len(q_nbrs & c_nbrs) / float(max(1, min(len(q_nbrs), len(c_nbrs)))))
+            else:
+                cohesion_vals.append(0.0)
+        cand_cohesion = torch.tensor(cohesion_vals, dtype=torch.float, device=dev)
+        pos_score = cand_bridge + pos_sim_beta * cand_sim.detach() + pos_cohesion_beta * cand_cohesion
+        pos_count = min(P, len(cand_ids))
+        if pos_count <= 0:
             continue
+        pos_idx = torch.topk(pos_score, k=pos_count).indices
+        pos_ids = [cand_ids[int(i)] for i in pos_idx.detach().cpu().tolist()]
+        selected = set(pos_ids)
+
+        boundary_ids = []
+        if BN > 0 and len(cand_ids) > pos_count:
+            boundary_mask_idx = [i for i, node in enumerate(cand_ids) if node not in selected]
+            if boundary_mask_idx:
+                boundary_idx_t = torch.tensor(boundary_mask_idx, device=dev)
+                boundary_score = (cand_bridge[boundary_idx_t]
+                                  - pos_sim_beta * cand_sim.detach()[boundary_idx_t]
+                                  - pos_cohesion_beta * cand_cohesion[boundary_idx_t])
+                take = min(BN, int(boundary_idx_t.numel()))
+                boundary_local = torch.topk(boundary_score, k=take).indices
+                boundary_global = boundary_idx_t[boundary_local]
+                boundary_ids = [cand_ids[int(i)] for i in boundary_global.detach().cpu().tolist()]
+
         excluded = set(pos_ids)
+        excluded.update(boundary_ids)
         excluded.update(q_nbrs)
         excluded.add(qi)
         allowed = np.array([i for i in range(N) if i not in excluded], dtype=np.int64)
@@ -935,16 +974,30 @@ def build_idbr_bridge_loss(z_rec, qc_adj, args, rng_q):
             neg_np = np.random.choice(neg_np, size=K, replace=True)
         pos_t = torch.tensor(pos_ids, device=dev)
         neg_t = torch.tensor(neg_np, device=dev)
-        q_vec = z_norm[qi]
         pos_logits = q_vec @ z_norm[pos_t].t()
         neg_logits = q_vec @ z_norm[neg_t].t()
-        logits = torch.cat([pos_logits, neg_logits], dim=0) / max(1e-6, float(args.tau))
-        targets = torch.zeros_like(logits)
-        targets[:pos_logits.numel()] = 1.0
-        losses.append(F.binary_cross_entropy_with_logits(logits, targets))
-        pos_bridge_stats.append(float(np.mean([score for _, score in top_items])))
+        logit_parts = [pos_logits, neg_logits]
+        target_parts = [torch.ones_like(pos_logits), torch.zeros_like(neg_logits)]
+        boundary_logits = None
+        if boundary_ids:
+            boundary_t = torch.tensor(boundary_ids, device=dev)
+            boundary_logits = q_vec @ z_norm[boundary_t].t()
+            logit_parts.append(boundary_logits)
+            target_parts.append(torch.zeros_like(boundary_logits))
+        logits = torch.cat(logit_parts, dim=0) / max(1e-6, float(args.tau))
+        targets = torch.cat(target_parts, dim=0)
+        loss = F.binary_cross_entropy_with_logits(logits, targets)
+        if boundary_logits is not None and margin_weight > 0:
+            margin_loss = F.relu(margin + boundary_logits.mean() - pos_logits.mean())
+            loss = loss + margin_weight * margin_loss
+            margin_stats.append(float(margin_loss.detach().item()))
+        losses.append(loss)
+        pos_bridge_stats.append(float(cand_bridge[pos_idx].detach().mean().item()))
         pos_sim_stats.append(float(pos_logits.detach().mean().item()))
         neg_sim_stats.append(float(neg_logits.detach().mean().item()))
+        if boundary_logits is not None:
+            boundary_sim_stats.append(float(boundary_logits.detach().mean().item()))
+            boundary_cohesion_stats.append(float(cand_cohesion[boundary_global].detach().mean().item()))
     if not losses:
         return None, None
     stats = {
@@ -952,6 +1005,9 @@ def build_idbr_bridge_loss(z_rec, qc_adj, args, rng_q):
         'pos_bridge': float(np.mean(pos_bridge_stats)),
         'pos_sim': float(np.mean(pos_sim_stats)),
         'neg_sim': float(np.mean(neg_sim_stats)),
+        'boundary_sim': float(np.mean(boundary_sim_stats)) if boundary_sim_stats else 0.0,
+        'boundary_cohesion': float(np.mean(boundary_cohesion_stats)) if boundary_cohesion_stats else 0.0,
+        'boundary_margin': float(np.mean(margin_stats)) if margin_stats else 0.0,
     }
     return torch.stack(losses).mean(), stats
 
@@ -1155,6 +1211,18 @@ if __name__ == '__main__':
                         help='Positive local bridge nodes per query for IDBR bridge training loss')
     parser.add_argument('--idbr_bridge_train_neg', type=int, default=64,
                         help='Negative nodes per query for IDBR bridge training loss')
+    parser.add_argument('--idbr_bridge_pos_sim_beta', type=float, default=0.3,
+                        help='Embedding similarity reward for IDBR bridge positive mining')
+    parser.add_argument('--idbr_bridge_pos_cohesion_beta', type=float, default=0.5,
+                        help='Local neighbor cohesion reward for IDBR bridge positive mining')
+    parser.add_argument('--idbr_boundary_neg_pool', type=int, default=128,
+                        help='High-bridge candidate pool for IDBR boundary hard negatives')
+    parser.add_argument('--idbr_boundary_neg', type=int, default=0,
+                        help='Boundary hard negatives per query for IDBR bridge training; 0 disables boundary mining')
+    parser.add_argument('--idbr_boundary_margin', type=float, default=0.2,
+                        help='Margin between positive and boundary-negative similarities')
+    parser.add_argument('--idbr_boundary_margin_weight', type=float, default=0.0,
+                        help='Weight of IDBR boundary margin loss inside bridge loss')
     parser.add_argument('--ilssc_proto_alpha', type=float, default=0.5,
                         help='Weight of ILSSC seed-prototype contrast term')
     parser.add_argument('--ilssc_tau_gate', type=float, default=0.2,
@@ -1897,6 +1965,9 @@ if __name__ == '__main__':
                f'idbr_pos={idbr_bridge_stats["pos_bridge"]:.4f}, '
                f'idbr_pos_sim={idbr_bridge_stats["pos_sim"]:.3f}, '
                f'idbr_neg_sim={idbr_bridge_stats["neg_sim"]:.3f}, '
+               f'idbr_bneg_sim={idbr_bridge_stats["boundary_sim"]:.3f}, '
+               f'idbr_bneg_coh={idbr_bridge_stats["boundary_cohesion"]:.3f}, '
+               f'idbr_margin={idbr_bridge_stats["boundary_margin"]:.3f}, '
                if args.lambda_idbr_bridge > 0 and idbr_bridge_loss is not None
                and idbr_bridge_stats is not None else '')
             + (f'ilssc={loss_info["ilssc"]:.4f}, '

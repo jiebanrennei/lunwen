@@ -53,6 +53,15 @@ Options:
                               Queries sampled per epoch for IDBR bridge training
   --idbr-bridge-train-pos N   Positive bridge nodes per query for IDBR bridge training
   --idbr-bridge-train-neg N   Negative nodes per query for IDBR bridge training
+  --idbr-bridge-pos-sim-beta X
+                              Similarity reward for IDBR bridge positive mining
+  --idbr-bridge-pos-cohesion-beta X
+                              Local cohesion reward for IDBR bridge positive mining
+  --idbr-boundary-neg-pool N  High-bridge pool for boundary hard negatives
+  --idbr-boundary-neg N       Boundary hard negatives per query
+  --idbr-boundary-margin X    Margin between positive and boundary-negative similarities
+  --idbr-boundary-margin-weight X
+                              Weight of boundary margin loss inside bridge loss
   --ilssc-warmup-epochs N     Disable ILSSC for first N epochs
   --ilssc-ramp-epochs N       Linearly ramp ILSSC weight after warmup
   --id-ilssc                  Enable intent-distribution-aware ILSSC
@@ -326,6 +335,36 @@ while [[ $# -gt 0 ]]; do
       ;;
     --idbr-bridge-train-neg|--idbr_bridge_train_neg)
       add_train_arg "--idbr_bridge_train_neg"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-bridge-pos-sim-beta|--idbr_bridge_pos_sim_beta)
+      add_train_arg "--idbr_bridge_pos_sim_beta"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-bridge-pos-cohesion-beta|--idbr_bridge_pos_cohesion_beta)
+      add_train_arg "--idbr_bridge_pos_cohesion_beta"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-boundary-neg-pool|--idbr_boundary_neg_pool)
+      add_train_arg "--idbr_boundary_neg_pool"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-boundary-neg|--idbr_boundary_neg)
+      add_train_arg "--idbr_boundary_neg"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-boundary-margin|--idbr_boundary_margin)
+      add_train_arg "--idbr_boundary_margin"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-boundary-margin-weight|--idbr_boundary_margin_weight)
+      add_train_arg "--idbr_boundary_margin_weight"
       add_train_arg "$2"
       shift 2
       ;;
