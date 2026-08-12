@@ -604,6 +604,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
             intent_conf = None
     dist_beta = float(getattr(args, 'intent_dist_beta', 0.0))
     high_beta = float(getattr(args, 'ilssc_high_order_beta', 0.0))
+    local_bridge_beta = float(getattr(args, 'ilssc_local_bridge_beta', 0.0))
     conf_tau = max(1e-6, float(getattr(args, 'intent_dist_conf_tau', 0.05)))
     min_conf = float(getattr(args, 'intent_dist_min_conf', 0.0))
 
@@ -625,6 +626,30 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
             vals.append(len(q_nbrs & c_nbrs) / math.sqrt(q_deg * max(1, len(c_nbrs))))
         return torch.tensor(vals, dtype=torch.float, device=dev)
 
+    def _local_bridge_scores(anchors, cand_list):
+        if local_bridge_beta <= 0:
+            return torch.zeros(len(cand_list), dtype=torch.float, device=dev)
+        anchors = [int(a) for a in anchors]
+        vals = []
+        for cand in cand_list:
+            c_nbrs = qc_adj[int(cand)]
+            score = 0.0
+            for anchor in anchors:
+                a_nbrs = qc_adj[int(anchor)]
+                a_deg = max(1, len(a_nbrs))
+                mids = a_nbrs & c_nbrs
+                if mids:
+                    score += sum(1.0 / max(1, len(qc_adj[int(mid)])) for mid in mids) / a_deg
+            vals.append(score / max(1, len(anchors)))
+        bridge_t = torch.tensor(vals, dtype=torch.float, device=dev)
+        if bridge_t.numel() > 1:
+            span = bridge_t.max() - bridge_t.min()
+            if float(span.item()) > 1e-12:
+                bridge_t = (bridge_t - bridge_t.min()) / span
+            else:
+                bridge_t = torch.zeros_like(bridge_t)
+        return bridge_t
+
     def _score_seed_candidates(cands, qi, iq_n, visited):
         cand_list = list(dict.fromkeys(int(c) for c in cands
                                        if int(c) != int(qi) and int(c) not in visited))
@@ -644,6 +669,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
         else:
             conf_t = torch.zeros_like(sim_t)
         high_t = _high_order_scores(qi, cand_list)
+        bridge_t = _local_bridge_scores(visited, cand_list)
         conn_vals = []
         for cand in cand_list:
             c_nbrs = qc_adj[int(cand)]
@@ -653,8 +679,9 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
                    + args.ilssc_sim_beta * sim_t
                    + args.ilssc_conn_beta * conn_t
                    + high_beta * high_t
+                   + local_bridge_beta * bridge_t
                    + dist_beta * gate_t * dist_t)
-        return cand_list, align_t, sim_t, conn_t, dist_t, gate_t, conf_t, high_t, score_t
+        return cand_list, align_t, sim_t, conn_t, dist_t, gate_t, conf_t, high_t, bridge_t, score_t
 
     def _mine_seed(qi, iq_n):
         visited = {int(qi)}
@@ -667,7 +694,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
             if len(cand) > frontier_pool:
                 cand = np.random.choice(np.array(cand, dtype=np.int64),
                                         size=frontier_pool, replace=False).tolist()
-            cand_list, align_t, sim_t, conn_t, dist_t, gate_t, conf_t, high_t, score_t = _score_seed_candidates(
+            cand_list, align_t, sim_t, conn_t, dist_t, gate_t, conf_t, high_t, bridge_t, score_t = _score_seed_candidates(
                 cand, qi, iq_n, visited)
             if not cand_list:
                 break
@@ -688,6 +715,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
                     'gate': float(gate_t[idx].item()),
                     'conf': float(conf_t[idx].item()),
                     'high': float(high_t[idx].item()),
+                    'bridge': float(bridge_t[idx].item()),
                     'score': float(score_t[idx].item()),
                     'hop': hop,
                 })
@@ -708,6 +736,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
     valid_q, intent_list = [], []
     seed_align_stats, seed_sim_stats, seed_conn_stats, seed_dist_stats = [], [], [], []
     seed_high_stats = []
+    seed_bridge_stats = []
     seed_conf_stats, seed_gate_stats, q_conf_stats = [], [], []
     seed_unique_stats, neg_sim_stats, neg_dist_stats = [], [], []
     neg_high_stats = []
@@ -726,7 +755,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
             iq_n = F.normalize(iq.detach(), dim=-1)
             seed_items = _mine_seed(qi, iq_n)
             if len(seed_items) == 0:
-                cand_list, align_t, sim_t, conn_t, dist_t, gate_t, conf_t, high_t, score_t = _score_seed_candidates(
+                cand_list, align_t, sim_t, conn_t, dist_t, gate_t, conf_t, high_t, bridge_t, score_t = _score_seed_candidates(
                     qc_adj[qi], qi, iq_n, {qi})
                 if not cand_list:
                     continue
@@ -741,6 +770,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
                     'gate': float(gate_t[idx].item()),
                     'conf': float(conf_t[idx].item()),
                     'high': float(high_t[idx].item()),
+                    'bridge': float(bridge_t[idx].item()),
                     'score': float(score_t[idx].item()),
                     'hop': 1,
                 } for idx in rank]
@@ -813,6 +843,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
         seed_conn_stats.append(float(np.mean([item['conn'] for item in seed_items])))
         seed_dist_stats.append(float(np.mean([item['dist'] for item in seed_items])))
         seed_high_stats.append(float(np.mean([item['high'] for item in seed_items])))
+        seed_bridge_stats.append(float(np.mean([item['bridge'] for item in seed_items])))
         seed_conf_stats.append(float(np.mean([item['conf'] for item in seed_items])))
         seed_gate_stats.append(float(np.mean([item['gate'] for item in seed_items])))
         q_conf_stats.append(float(q_conf.item()))
@@ -844,6 +875,7 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
         'seed_conn': float(np.mean(seed_conn_stats)),
         'seed_dist': float(np.mean(seed_dist_stats)),
         'seed_high': float(np.mean(seed_high_stats)),
+        'seed_bridge': float(np.mean(seed_bridge_stats)),
         'seed_conf': float(np.mean(seed_conf_stats)),
         'seed_gate': float(np.mean(seed_gate_stats)),
         'q_conf': float(np.mean(q_conf_stats)),
@@ -856,6 +888,72 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
         'id_updated': int(bool(intent_dist_memory is not None and intent_dist_memory.updated_this_epoch)),
     }
     return ilssc_args, stats
+
+
+def build_idbr_bridge_loss(z_rec, qc_adj, args, rng_q):
+    if qc_adj is None or float(getattr(args, 'lambda_idbr_bridge', 0.0)) <= 0:
+        return None, None
+    N = z_rec.size(0)
+    dev = z_rec.device
+    B = max(1, int(getattr(args, 'idbr_bridge_train_queries', 8)))
+    P = max(1, int(getattr(args, 'idbr_bridge_train_pos', 8)))
+    K = max(1, int(getattr(args, 'idbr_bridge_train_neg', 64)))
+    z_norm = F.normalize(z_rec, dim=-1)
+    losses = []
+    pos_bridge_stats, pos_sim_stats, neg_sim_stats = [], [], []
+    q_list = torch.randint(0, N, (B,), generator=rng_q).tolist()
+    for qi in q_list:
+        qi = int(qi)
+        q_nbrs = qc_adj[qi]
+        if not q_nbrs:
+            continue
+        cand_scores = {}
+        q_deg = max(1, len(q_nbrs))
+        for mid in q_nbrs:
+            mid_nbrs = qc_adj[int(mid)]
+            mid_deg = max(1, len(mid_nbrs))
+            contrib = 1.0 / (q_deg * mid_deg)
+            for cand in mid_nbrs:
+                cand = int(cand)
+                if cand == qi or cand in q_nbrs:
+                    continue
+                cand_scores[cand] = cand_scores.get(cand, 0.0) + contrib
+        if not cand_scores:
+            continue
+        top_items = sorted(cand_scores.items(), key=lambda x: x[1], reverse=True)[:P]
+        pos_ids = [node for node, _ in top_items]
+        if not pos_ids:
+            continue
+        excluded = set(pos_ids)
+        excluded.update(q_nbrs)
+        excluded.add(qi)
+        allowed = np.array([i for i in range(N) if i not in excluded], dtype=np.int64)
+        if allowed.size == 0:
+            continue
+        neg_np = np.random.choice(allowed, size=min(K, allowed.size), replace=False)
+        if neg_np.size < K:
+            neg_np = np.random.choice(neg_np, size=K, replace=True)
+        pos_t = torch.tensor(pos_ids, device=dev)
+        neg_t = torch.tensor(neg_np, device=dev)
+        q_vec = z_norm[qi]
+        pos_logits = q_vec @ z_norm[pos_t].t()
+        neg_logits = q_vec @ z_norm[neg_t].t()
+        logits = torch.cat([pos_logits, neg_logits], dim=0) / max(1e-6, float(args.tau))
+        targets = torch.zeros_like(logits)
+        targets[:pos_logits.numel()] = 1.0
+        losses.append(F.binary_cross_entropy_with_logits(logits, targets))
+        pos_bridge_stats.append(float(np.mean([score for _, score in top_items])))
+        pos_sim_stats.append(float(pos_logits.detach().mean().item()))
+        neg_sim_stats.append(float(neg_logits.detach().mean().item()))
+    if not losses:
+        return None, None
+    stats = {
+        'valid_q': len(losses),
+        'pos_bridge': float(np.mean(pos_bridge_stats)),
+        'pos_sim': float(np.mean(pos_sim_stats)),
+        'neg_sim': float(np.mean(neg_sim_stats)),
+    }
+    return torch.stack(losses).mean(), stats
 
 
 if __name__ == '__main__':
@@ -1047,6 +1145,16 @@ if __name__ == '__main__':
                         help='Penalty for structurally close ILSSC hard negatives')
     parser.add_argument('--ilssc_high_order_beta', type=float, default=0.0,
                         help='IDBR-inspired sparse high-order common-neighbor prior for ILSSC mining')
+    parser.add_argument('--ilssc_local_bridge_beta', type=float, default=0.0,
+                        help='IDBR local two-step transition bridge weight for ILSSC seed mining')
+    parser.add_argument('--lambda_idbr_bridge', type=float, default=0.0,
+                        help='Training loss weight for IDBR local bridge contrastive learning')
+    parser.add_argument('--idbr_bridge_train_queries', type=int, default=8,
+                        help='Queries sampled per epoch for IDBR bridge training loss')
+    parser.add_argument('--idbr_bridge_train_pos', type=int, default=8,
+                        help='Positive local bridge nodes per query for IDBR bridge training loss')
+    parser.add_argument('--idbr_bridge_train_neg', type=int, default=64,
+                        help='Negative nodes per query for IDBR bridge training loss')
     parser.add_argument('--ilssc_proto_alpha', type=float, default=0.5,
                         help='Weight of ILSSC seed-prototype contrast term')
     parser.add_argument('--ilssc_tau_gate', type=float, default=0.2,
@@ -1150,6 +1258,8 @@ if __name__ == '__main__':
                         help='Max sparse states kept per query diffusion step')
     parser.add_argument('--idbr_bridge_fanout', type=int, default=0,
                         help='Top query-similar neighbors expanded per diffusion state; 0 expands all neighbors')
+    parser.add_argument('--idbr_local_seed_beta', type=float, default=0.0,
+                        help='IDBR local two-step bridge weight for greedy initial seed only')
     parser.add_argument('--greedy_recall_expand_size', type=int, default=0,
                         help='Add up to N high-order frontier nodes after HSE core community selection')
     parser.add_argument('--greedy_recall_min_sim_delta', type=float, default=0.0,
@@ -1202,6 +1312,7 @@ if __name__ == '__main__':
           f"ilssc_neg_mode={args.ilssc_neg_mode} "
           f"ilssc_gate_mode={args.ilssc_gate_mode} "
           f"ilssc_high_order_beta={args.ilssc_high_order_beta} "
+          f"ilssc_local_bridge_beta={args.ilssc_local_bridge_beta} "
           f"ilssc_warmup={args.ilssc_warmup_epochs} "
           f"ilssc_ramp={args.ilssc_ramp_epochs} "
           f"ilssc_use_intent_dist={args.ilssc_use_intent_dist} "
@@ -1238,6 +1349,7 @@ if __name__ == '__main__':
           f"idbr_bridge_decay={args.idbr_bridge_decay} "
           f"idbr_bridge_max_states={args.idbr_bridge_max_states} "
           f"idbr_bridge_fanout={args.idbr_bridge_fanout} "
+          f"idbr_local_seed_beta={args.idbr_local_seed_beta} "
           f"greedy_recall_expand_size={args.greedy_recall_expand_size} "
           f"greedy_recall_min_sim_delta={args.greedy_recall_min_sim_delta} "
           f"include_query_in_pred={args.include_query_in_pred} "
@@ -1527,7 +1639,8 @@ if __name__ == '__main__':
     start = t() - train_elapsed_prev    # 续训时把已训耗时算进总时间
     # 阶段B: query-centric 结构采样使用与 CS 评测一致的完整图
     qc_adj = None
-    if args.lambda_igqc > 0 or args.lambda_ic_spnm > 0 or args.lambda_ilssc > 0:
+    if (args.lambda_igqc > 0 or args.lambda_ic_spnm > 0 or args.lambda_ilssc > 0
+            or args.lambda_idbr_bridge > 0):
         qc_adj = _build_adj_list(_cs_edge_index(data), data.num_nodes)
     if args.lambda_igqc > 0:
         print(f"[IGQC] 全量图邻接表就绪, lambda={args.lambda_igqc}, "
@@ -1723,6 +1836,16 @@ if __name__ == '__main__':
                 'targets': aux.get('cand_targets'),
             }
 
+        idbr_bridge_loss = None
+        idbr_bridge_stats = None
+        if qc_adj is not None and args.lambda_idbr_bridge > 0:
+            idbr_bridge_loss, idbr_bridge_stats = build_idbr_bridge_loss(
+                z_rec=z_rec,
+                qc_adj=qc_adj,
+                args=args,
+                rng_q=rng_q,
+            )
+
         model_loss, loss_info = contrastive_model.total_loss(
             z_adv, z_rec, intent_vector, reg,
             reg_lambda=args.reg_lambda, adv_lambda=effective_adv_lambda,
@@ -1738,6 +1861,8 @@ if __name__ == '__main__':
             lambda_cand_bce=effective_lambda_cand_bce
         )
         model_loss = model_loss + effective_lambda_rec * l_susp
+        if idbr_bridge_loss is not None:
+            model_loss = model_loss + args.lambda_idbr_bridge * idbr_bridge_loss
 
         # ICRA 关系熵正则: 最大化关系权重熵, 防止融合塌缩到单一 meta-path
         if use_multi and args.lambda_rel_entropy > 0 and alpha is not None:
@@ -1767,6 +1892,13 @@ if __name__ == '__main__':
                f'ic_pos_std={ic_spnm_stats["pos_align_std"]:.3f}, '
                f'ic_uniq={ic_spnm_stats["pos_unique"]:.1f}, '
                if args.lambda_ic_spnm > 0 and ic_spnm_stats is not None else '')
+            + (f'idbr_bridge={idbr_bridge_loss.item():.4f}, '
+               f'idbr_q={idbr_bridge_stats["valid_q"]}, '
+               f'idbr_pos={idbr_bridge_stats["pos_bridge"]:.4f}, '
+               f'idbr_pos_sim={idbr_bridge_stats["pos_sim"]:.3f}, '
+               f'idbr_neg_sim={idbr_bridge_stats["neg_sim"]:.3f}, '
+               if args.lambda_idbr_bridge > 0 and idbr_bridge_loss is not None
+               and idbr_bridge_stats is not None else '')
             + (f'ilssc={loss_info["ilssc"]:.4f}, '
                f'il_lam={eff_lambda_ilssc:.4f}, '
                if args.lambda_ilssc > 0 else '')
@@ -1776,6 +1908,7 @@ if __name__ == '__main__':
                f'il_conn={ilssc_stats["seed_conn"]:.3f}, '
                f'il_dist={ilssc_stats["seed_dist"]:.3f}, '
                f'il_high={ilssc_stats["seed_high"]:.3f}, '
+               f'il_bridge={ilssc_stats["seed_bridge"]:.3f}, '
                f'il_conf_q={ilssc_stats["q_conf"]:.3f}, '
                f'il_conf_seed={ilssc_stats["seed_conf"]:.3f}, '
                f'il_gate_seed={ilssc_stats["seed_gate"]:.3f}, '
@@ -1927,6 +2060,7 @@ if __name__ == '__main__':
             idbr_bridge_decay=args.idbr_bridge_decay,
             idbr_bridge_max_states=args.idbr_bridge_max_states,
             idbr_bridge_fanout=args.idbr_bridge_fanout,
+            idbr_local_seed_beta=args.idbr_local_seed_beta,
             recall_expand_size=args.greedy_recall_expand_size,
             recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta
         )
@@ -1965,6 +2099,7 @@ if __name__ == '__main__':
                                             idbr_bridge_decay=args.idbr_bridge_decay,
                                             idbr_bridge_max_states=args.idbr_bridge_max_states,
                                             idbr_bridge_fanout=args.idbr_bridge_fanout,
+                                            idbr_local_seed_beta=args.idbr_local_seed_beta,
                                             recall_expand_size=args.greedy_recall_expand_size,
                                             recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta)
 

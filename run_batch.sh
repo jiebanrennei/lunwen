@@ -47,6 +47,12 @@ Options:
   --ilssc-neg-mode MODE       ILSSC negative mining: conservative or hard
   --ilssc-gate-mode MODE      ILSSC seed weighting: prior, intent, or mix
   --ilssc-high-order-beta X   IDBR-inspired sparse high-order prior weight
+  --ilssc-local-bridge-beta X IDBR local two-step bridge weight for ILSSC seed mining
+  --lambda-idbr-bridge X      Training loss weight for IDBR local bridge contrastive learning
+  --idbr-bridge-train-queries N
+                              Queries sampled per epoch for IDBR bridge training
+  --idbr-bridge-train-pos N   Positive bridge nodes per query for IDBR bridge training
+  --idbr-bridge-train-neg N   Negative nodes per query for IDBR bridge training
   --ilssc-warmup-epochs N     Disable ILSSC for first N epochs
   --ilssc-ramp-epochs N       Linearly ramp ILSSC weight after warmup
   --id-ilssc                  Enable intent-distribution-aware ILSSC
@@ -80,6 +86,7 @@ Options:
   --idbr-bridge-decay X       Per-step decay for IDBR bridge
   --idbr-bridge-max-states N  Max sparse states kept per query diffusion step
   --idbr-bridge-fanout N      Top query-similar neighbors expanded per diffusion state; 0=all
+  --idbr-local-seed-beta X    IDBR local two-step bridge weight for greedy initial seed
   --greedy-recall-expand-size N
                               Add up to N high-order frontier nodes after core community selection
   --greedy-recall-min-sim-delta X
@@ -297,6 +304,31 @@ while [[ $# -gt 0 ]]; do
       add_train_arg "$2"
       shift 2
       ;;
+    --ilssc-local-bridge-beta|--ilssc_local_bridge_beta)
+      add_train_arg "--ilssc_local_bridge_beta"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --lambda-idbr-bridge|--lambda_idbr_bridge)
+      add_train_arg "--lambda_idbr_bridge"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-bridge-train-queries|--idbr_bridge_train_queries)
+      add_train_arg "--idbr_bridge_train_queries"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-bridge-train-pos|--idbr_bridge_train_pos)
+      add_train_arg "--idbr_bridge_train_pos"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-bridge-train-neg|--idbr_bridge_train_neg)
+      add_train_arg "--idbr_bridge_train_neg"
+      add_train_arg "$2"
+      shift 2
+      ;;
     --ilssc-warmup-epochs|--ilssc_warmup_epochs)
       add_train_arg "--ilssc_warmup_epochs"
       add_train_arg "$2"
@@ -440,6 +472,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --idbr-bridge-fanout|--idbr_bridge_fanout)
       add_train_arg "--idbr_bridge_fanout"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-local-seed-beta|--idbr_local_seed_beta)
+      add_train_arg "--idbr_local_seed_beta"
       add_train_arg "$2"
       shift 2
       ;;

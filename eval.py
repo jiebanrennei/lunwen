@@ -431,6 +431,26 @@ def _idbr_bridge_candidate_scores(cand_arr, bridge_scores):
     return np.array([bridge_scores.get(int(c), 0.0) for c in cand_arr], dtype=np.float64)
 
 
+def _idbr_local_bridge_candidate_scores(cand_arr, anchors, adj):
+    anchors = [int(a) for a in anchors]
+    if not anchors or cand_arr.size == 0:
+        return None
+    vals = np.zeros(cand_arr.size, dtype=np.float64)
+    for ai, anchor in enumerate(anchors):
+        a_nbrs = adj[int(anchor)]
+        a_deg = max(1, len(a_nbrs))
+        if not a_nbrs:
+            continue
+        for i, cand in enumerate(cand_arr):
+            c_nbrs = adj[int(cand)]
+            mids = a_nbrs & c_nbrs
+            if not mids:
+                continue
+            vals[i] += sum(1.0 / max(1, len(adj[int(mid)])) for mid in mids) / a_deg
+    vals = vals / float(len(anchors))
+    return _minmax_norm(vals)
+
+
 def _recall_expand_community(q, comm, sims_q, adj, max_add=0, pool_size=0,
                              min_sim=None, high_order_beta=0.0,
                              comm_direct_beta=0.0, comm_cohesion_beta=0.0,
@@ -568,6 +588,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                          hse_density_alpha=1.0,
                          idbr_bridge_scores=None,
                          idbr_bridge_beta=0.0,
+                         idbr_local_seed_beta=0.0,
                          early_stop_w=None,
                          early_stop_avg=None,
                          early_stop_patience=0,
@@ -592,7 +613,9 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     hse_density = bool(hse_density)
     hse_density_alpha = max(0.0, float(hse_density_alpha))
     idbr_bridge_beta = max(0.0, float(idbr_bridge_beta))
+    idbr_local_seed_beta = max(0.0, float(idbr_local_seed_beta))
     use_idbr_bridge = idbr_bridge_beta > 0 and idbr_bridge_scores is not None
+    use_idbr_local_seed = idbr_local_seed_beta > 0
     use_hse = (hse_high_order_beta > 0 or hse_comm_cohesion_beta > 0
                or hse_boundary_gamma > 0 or hse_comm_direct_beta > 0)
     visited = {q}
@@ -658,6 +681,10 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                     for c in cand_arr
                 ], dtype=np.float64)
                 scores = scores + init_seed_conn_beta * conn
+            if use_idbr_local_seed:
+                local_bridge = _idbr_local_bridge_candidate_scores(cand_arr, visited, adj)
+                if local_bridge is not None:
+                    scores = scores + idbr_local_seed_beta * local_bridge
             if use_idbr_bridge:
                 bridge = _idbr_bridge_candidate_scores(cand_arr, idbr_bridge_scores)
                 if bridge is not None:
@@ -821,6 +848,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             idbr_bridge_decay=1.0,
                             idbr_bridge_max_states=50000,
                             idbr_bridge_fanout=0,
+                            idbr_local_seed_beta=0.0,
                             recall_expand_size=0,
                             recall_expand_min_sim_delta=0.0):
     """
@@ -898,6 +926,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             hse_density_alpha=hse_density_alpha,
             idbr_bridge_scores=bridge_scores,
             idbr_bridge_beta=idbr_bridge_beta,
+            idbr_local_seed_beta=idbr_local_seed_beta,
             early_stop_w=early_w,
             early_stop_avg=density_avg,
             early_stop_patience=greedy_patience,
@@ -1225,6 +1254,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      idbr_bridge_decay=1.0,
                                      idbr_bridge_max_states=50000,
                                      idbr_bridge_fanout=0,
+                                     idbr_local_seed_beta=0.0,
                                      recall_expand_size=0,
                                      recall_expand_min_sim_delta=0.0):
     """
@@ -1303,6 +1333,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             hse_density_alpha=hse_density_alpha,
             idbr_bridge_scores=bridge_scores,
             idbr_bridge_beta=idbr_bridge_beta,
+            idbr_local_seed_beta=idbr_local_seed_beta,
             early_stop_w=early_w,
             early_stop_avg=density_avg,
             early_stop_patience=greedy_patience,
