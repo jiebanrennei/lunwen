@@ -73,6 +73,12 @@ Options:
   --greedy-hse-pool-size N    Top-K frontier candidates scored by HSE; 0=full frontier
   --greedy-hse-normalize      Normalize HSE structural terms inside candidate pool
   --greedy-hse-density        Use HSE-adjusted utility for greedy density selection
+  --greedy-hse-density-alpha X
+                              Strength of centered HSE adjustment in density utility
+  --idbr-bridge-beta X        Query-centered IDBR diffusion bridge score weight
+  --idbr-bridge-steps LIST    Diffusion steps, e.g. 2,4 or 2,4,6
+  --idbr-bridge-decay X       Per-step decay for IDBR bridge
+  --idbr-bridge-max-states N  Max sparse states kept per query diffusion step
   --greedy-recall-expand-size N
                               Add up to N high-order frontier nodes after core community selection
   --greedy-recall-min-sim-delta X
@@ -405,6 +411,31 @@ while [[ $# -gt 0 ]]; do
     --greedy-hse-density|--greedy_hse_density|--hse-density|--hse_density)
       add_train_arg "--greedy_hse_density"
       shift
+      ;;
+    --greedy-hse-density-alpha|--greedy_hse_density_alpha|--hse-density-alpha|--hse_density_alpha)
+      add_train_arg "--greedy_hse_density_alpha"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-bridge-beta|--idbr_bridge_beta)
+      add_train_arg "--idbr_bridge_beta"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-bridge-steps|--idbr_bridge_steps)
+      add_train_arg "--idbr_bridge_steps"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-bridge-decay|--idbr_bridge_decay)
+      add_train_arg "--idbr_bridge_decay"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-bridge-max-states|--idbr_bridge_max_states)
+      add_train_arg "--idbr_bridge_max_states"
+      add_train_arg "$2"
+      shift 2
       ;;
     --greedy-recall-expand-size|--greedy_recall_expand_size|--hse-recall-expand-size|--hse_recall_expand_size)
       add_train_arg "--greedy_recall_expand_size"

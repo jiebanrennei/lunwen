@@ -1138,6 +1138,16 @@ if __name__ == '__main__':
                         help='Normalize each HSE structural term inside the current candidate pool')
     parser.add_argument('--greedy_hse_density', action='store_true',
                         help='Use HSE-adjusted selected utility for greedy density selection and early stop')
+    parser.add_argument('--greedy_hse_density_alpha', type=float, default=1.0,
+                        help='Strength of centered HSE adjustment in greedy density utility')
+    parser.add_argument('--idbr_bridge_beta', type=float, default=0.0,
+                        help='Query-centered IDBR diffusion bridge score weight during greedy search')
+    parser.add_argument('--idbr_bridge_steps', type=str, default='2,4',
+                        help='Comma-separated diffusion steps for IDBR bridge, e.g. 2,4,6')
+    parser.add_argument('--idbr_bridge_decay', type=float, default=1.0,
+                        help='Per-step decay for IDBR diffusion bridge')
+    parser.add_argument('--idbr_bridge_max_states', type=int, default=50000,
+                        help='Max sparse states kept per query diffusion step')
     parser.add_argument('--greedy_recall_expand_size', type=int, default=0,
                         help='Add up to N high-order frontier nodes after HSE core community selection')
     parser.add_argument('--greedy_recall_min_sim_delta', type=float, default=0.0,
@@ -1154,6 +1164,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     cs_topk = parse_topk_arg(args.cs_topk)
     cs_w_list = parse_float_list_arg(args.cs_w_list)
+    idbr_bridge_steps = tuple(int(x) for x in parse_float_list_arg(args.idbr_bridge_steps))
     effective_num_cand_per_node = 0 if args.disable_candidate_edges else args.num_cand_per_node
     effective_lambda_intent = 0.0 if args.no_intent_loss else args.lambda_intent
     effective_adv_lambda = 0.0 if args.no_edge_feature_loss else args.adv_lambda
@@ -1219,6 +1230,11 @@ if __name__ == '__main__':
           f"greedy_hse_pool_size={args.greedy_hse_pool_size} "
           f"greedy_hse_normalize={args.greedy_hse_normalize} "
           f"greedy_hse_density={args.greedy_hse_density} "
+          f"greedy_hse_density_alpha={args.greedy_hse_density_alpha} "
+          f"idbr_bridge_beta={args.idbr_bridge_beta} "
+          f"idbr_bridge_steps={idbr_bridge_steps} "
+          f"idbr_bridge_decay={args.idbr_bridge_decay} "
+          f"idbr_bridge_max_states={args.idbr_bridge_max_states} "
           f"greedy_recall_expand_size={args.greedy_recall_expand_size} "
           f"greedy_recall_min_sim_delta={args.greedy_recall_min_sim_delta} "
           f"include_query_in_pred={args.include_query_in_pred} "
@@ -1890,6 +1906,11 @@ if __name__ == '__main__':
             hse_comm_direct_beta=args.greedy_comm_direct_beta,
             hse_normalize=args.greedy_hse_normalize,
             hse_density=args.greedy_hse_density,
+            hse_density_alpha=args.greedy_hse_density_alpha,
+            idbr_bridge_beta=args.idbr_bridge_beta,
+            idbr_bridge_steps=idbr_bridge_steps,
+            idbr_bridge_decay=args.idbr_bridge_decay,
+            idbr_bridge_max_states=args.idbr_bridge_max_states,
             recall_expand_size=args.greedy_recall_expand_size,
             recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta
         )
@@ -1922,6 +1943,11 @@ if __name__ == '__main__':
                                             hse_comm_direct_beta=args.greedy_comm_direct_beta,
                                             hse_normalize=args.greedy_hse_normalize,
                                             hse_density=args.greedy_hse_density,
+                                            hse_density_alpha=args.greedy_hse_density_alpha,
+                                            idbr_bridge_beta=args.idbr_bridge_beta,
+                                            idbr_bridge_steps=idbr_bridge_steps,
+                                            idbr_bridge_decay=args.idbr_bridge_decay,
+                                            idbr_bridge_max_states=args.idbr_bridge_max_states,
                                             recall_expand_size=args.greedy_recall_expand_size,
                                             recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta)
 

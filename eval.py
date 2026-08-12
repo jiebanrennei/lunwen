@@ -375,6 +375,50 @@ def _hse_candidate_scores(q, cand_arr, visited, adj, community_halo,
     return scores
 
 
+def _idbr_diffusion_bridge(q, adj, steps=(2, 4), decay=1.0, max_states=50000):
+    steps = tuple(sorted({int(s) for s in steps if int(s) > 0}))
+    if not steps:
+        return None
+    max_step = max(steps)
+    max_states = max(1, int(max_states))
+    decay = max(0.0, float(decay))
+    cur = {int(q): 1.0}
+    scores = {}
+    for step in range(1, max_step + 1):
+        nxt = {}
+        for u, prob in cur.items():
+            nbrs = adj[int(u)]
+            if not nbrs:
+                continue
+            share = prob / float(len(nbrs))
+            for v in nbrs:
+                nxt[v] = nxt.get(v, 0.0) + share
+        if len(nxt) > max_states:
+            top = sorted(nxt.items(), key=lambda x: x[1], reverse=True)[:max_states]
+            total = sum(v for _, v in top)
+            nxt = {k: v / total for k, v in top} if total > 0 else dict(top)
+        cur = nxt
+        if step in steps:
+            weight = decay ** (step - 1)
+            for v, prob in cur.items():
+                scores[v] = scores.get(v, 0.0) + weight * prob
+    scores.pop(int(q), None)
+    if not scores:
+        return None
+    vals = np.fromiter(scores.values(), dtype=np.float64)
+    vmin = float(vals.min())
+    span = float(vals.max() - vmin)
+    if span <= 1e-12:
+        return {k: 0.0 for k in scores}
+    return {k: (float(v) - vmin) / span for k, v in scores.items()}
+
+
+def _idbr_bridge_candidate_scores(cand_arr, bridge_scores):
+    if not bridge_scores:
+        return None
+    return np.array([bridge_scores.get(int(c), 0.0) for c in cand_arr], dtype=np.float64)
+
+
 def _recall_expand_community(q, comm, sims_q, adj, max_add=0, pool_size=0,
                              min_sim=None, high_order_beta=0.0,
                              comm_direct_beta=0.0, comm_cohesion_beta=0.0,
@@ -509,6 +553,9 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                          hse_comm_direct_beta=0.0,
                          hse_normalize=False,
                          hse_density=False,
+                         hse_density_alpha=1.0,
+                         idbr_bridge_scores=None,
+                         idbr_bridge_beta=0.0,
                          early_stop_w=None,
                          early_stop_avg=None,
                          early_stop_patience=0,
@@ -531,6 +578,9 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     hse_comm_direct_beta = max(0.0, float(hse_comm_direct_beta))
     hse_normalize = bool(hse_normalize)
     hse_density = bool(hse_density)
+    hse_density_alpha = max(0.0, float(hse_density_alpha))
+    idbr_bridge_beta = max(0.0, float(idbr_bridge_beta))
+    use_idbr_bridge = idbr_bridge_beta > 0 and idbr_bridge_scores is not None
     use_hse = (hse_high_order_beta > 0 or hse_comm_cohesion_beta > 0
                or hse_boundary_gamma > 0 or hse_comm_direct_beta > 0)
     visited = {q}
@@ -554,7 +604,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
         raw_scores = sims_q[cand_arr].astype(np.float64, copy=False)
         adjust = scores.astype(np.float64, copy=False) - raw_scores
         adjust = adjust - float(adjust.mean()) if adjust.size > 0 else adjust
-        utilities = raw_scores + adjust
+        utilities = raw_scores + hse_density_alpha * adjust
         return {int(c): float(u) for c, u in zip(cand_arr.tolist(), utilities.tolist())}
 
     def _node_utility(node, utilities):
@@ -596,6 +646,10 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                     for c in cand_arr
                 ], dtype=np.float64)
                 scores = scores + init_seed_conn_beta * conn
+            if use_idbr_bridge:
+                bridge = _idbr_bridge_candidate_scores(cand_arr, idbr_bridge_scores)
+                if bridge is not None:
+                    scores = scores + idbr_bridge_beta * bridge
             if use_hse:
                 cand_arr, scores = _limit_hse_pool(cand_arr, scores, hse_pool_size)
                 hse_scores = _hse_candidate_scores(
@@ -646,6 +700,11 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
             if span > 1e-12:
                 conn = (conn - conn.min()) / span
             scores = scores + connectivity_boost * conn
+
+        if use_idbr_bridge:
+            bridge = _idbr_bridge_candidate_scores(cand_arr, idbr_bridge_scores)
+            if bridge is not None:
+                scores = scores + idbr_bridge_beta * bridge
 
         if use_hse:
             cand_arr, scores = _limit_hse_pool(cand_arr, scores, hse_pool_size)
@@ -744,6 +803,11 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             hse_comm_direct_beta=0.0,
                             hse_normalize=False,
                             hse_density=False,
+                            hse_density_alpha=1.0,
+                            idbr_bridge_beta=0.0,
+                            idbr_bridge_steps=(2, 4),
+                            idbr_bridge_decay=1.0,
+                            idbr_bridge_max_states=50000,
                             recall_expand_size=0,
                             recall_expand_min_sim_delta=0.0):
     """
@@ -794,6 +858,10 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
         sims_q = sims[q]
         avg = float(sims_q.mean())
         density_avg = avg
+        bridge_scores = _idbr_diffusion_bridge(
+            q, adj, steps=idbr_bridge_steps,
+            decay=idbr_bridge_decay,
+            max_states=idbr_bridge_max_states) if idbr_bridge_beta > 0 else None
         early_w = w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None
 
         # 只扩展一次
@@ -812,6 +880,9 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             hse_comm_direct_beta=hse_comm_direct_beta,
             hse_normalize=hse_normalize,
             hse_density=hse_density,
+            hse_density_alpha=hse_density_alpha,
+            idbr_bridge_scores=bridge_scores,
+            idbr_bridge_beta=idbr_bridge_beta,
             early_stop_w=early_w,
             early_stop_avg=density_avg,
             early_stop_patience=greedy_patience,
@@ -1133,6 +1204,11 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      hse_comm_direct_beta=0.0,
                                      hse_normalize=False,
                                      hse_density=False,
+                                     hse_density_alpha=1.0,
+                                     idbr_bridge_beta=0.0,
+                                     idbr_bridge_steps=(2, 4),
+                                     idbr_bridge_decay=1.0,
+                                     idbr_bridge_max_states=50000,
                                      recall_expand_size=0,
                                      recall_expand_min_sim_delta=0.0):
     """
@@ -1186,6 +1262,10 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
 
         avg = float(sims_q.mean())
         density_avg = avg
+        bridge_scores = _idbr_diffusion_bridge(
+            q, adj, steps=idbr_bridge_steps,
+            decay=idbr_bridge_decay,
+            max_states=idbr_bridge_max_states) if idbr_bridge_beta > 0 else None
         early_w = w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None
         node_order, cum_sims = _greedy_expand_trace(
             q, sims_q, adj, max_iter,
@@ -1202,6 +1282,9 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             hse_comm_direct_beta=hse_comm_direct_beta,
             hse_normalize=hse_normalize,
             hse_density=hse_density,
+            hse_density_alpha=hse_density_alpha,
+            idbr_bridge_scores=bridge_scores,
+            idbr_bridge_beta=idbr_bridge_beta,
             early_stop_w=early_w,
             early_stop_avg=density_avg,
             early_stop_patience=greedy_patience,
