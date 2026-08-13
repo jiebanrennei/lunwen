@@ -879,8 +879,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                 min_size=greedy_init_seed_size)
             comm = _prune_community_edges(
                 q, comm, sims_q, adj, density_avg, w,
-                max_remove=2,
-                prune_pool_size=32,
+                max_remove=5,
+                prune_pool_size=64,
                 min_size=greedy_init_seed_size,
                 min_gain_tol=greedy_min_gain_tol)
             if recall_expand_size > 0:
@@ -1275,8 +1275,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                 min_size=greedy_init_seed_size)
             comm = _prune_community_edges(
                 q, comm, sims_q, adj, density_avg, w,
-                max_remove=2,
-                prune_pool_size=32,
+                max_remove=5,
+                prune_pool_size=64,
                 min_size=greedy_init_seed_size,
                 min_gain_tol=greedy_min_gain_tol)
             if recall_expand_size > 0:
