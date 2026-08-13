@@ -431,22 +431,27 @@ def _idbr_bridge_candidate_scores(cand_arr, bridge_scores):
     return np.array([bridge_scores.get(int(c), 0.0) for c in cand_arr], dtype=np.float64)
 
 
+def _weighted_overlap_score(left_nbrs, right_nbrs, adj):
+    if not left_nbrs or not right_nbrs:
+        return 0.0
+    if len(left_nbrs) > len(right_nbrs):
+        left_nbrs, right_nbrs = right_nbrs, left_nbrs
+    return sum(1.0 / max(1, len(adj[int(mid)])) for mid in left_nbrs if mid in right_nbrs)
+
+
 def _idbr_local_bridge_candidate_scores(cand_arr, anchors, adj):
     anchors = [int(a) for a in anchors]
     if not anchors or cand_arr.size == 0:
         return None
     vals = np.zeros(cand_arr.size, dtype=np.float64)
-    for ai, anchor in enumerate(anchors):
+    for anchor in anchors:
         a_nbrs = adj[int(anchor)]
         a_deg = max(1, len(a_nbrs))
         if not a_nbrs:
             continue
         for i, cand in enumerate(cand_arr):
             c_nbrs = adj[int(cand)]
-            mids = a_nbrs & c_nbrs
-            if not mids:
-                continue
-            vals[i] += sum(1.0 / max(1, len(adj[int(mid)])) for mid in mids) / a_deg
+            vals[i] += _weighted_overlap_score(a_nbrs, c_nbrs, adj) / a_deg
     vals = vals / float(len(anchors))
     return _minmax_norm(vals)
 
@@ -454,10 +459,12 @@ def _idbr_local_bridge_candidate_scores(cand_arr, anchors, adj):
 def _idbr_boundary_penalty_scores(cand_arr, visited, adj, community_halo, sims_q=None,
                                   bridge_scores=None, sim_gamma=0.5,
                                   cohesion_gamma=0.5, bridge_gamma=1.0,
-                                  normalize=True):
+                                  anchor_nodes=None, normalize=True):
     if cand_arr.size == 0 or bridge_gamma <= 0:
         return None
-    local_bridge = _idbr_local_bridge_candidate_scores(cand_arr, visited, adj)
+    if anchor_nodes is None:
+        anchor_nodes = visited
+    local_bridge = _idbr_local_bridge_candidate_scores(cand_arr, anchor_nodes, adj)
     global_bridge = _idbr_bridge_candidate_scores(cand_arr, bridge_scores)
     if local_bridge is None and global_bridge is None:
         return None
@@ -470,7 +477,7 @@ def _idbr_boundary_penalty_scores(cand_arr, visited, adj, community_halo, sims_q
     cohesion = np.zeros(cand_arr.size, dtype=np.float64)
     for i, c in enumerate(cand_arr):
         c_nbrs = adj[int(c)]
-        cohesion[i] = len(c_nbrs & community_halo) / max(1, len(c_nbrs))
+        cohesion[i] = sum(1 for nb in c_nbrs if nb in community_halo) / max(1, len(c_nbrs))
     cohesion_risk = 1.0 - _minmax_norm(cohesion)
     risk = cohesion_gamma * cohesion_risk
     if sims_q is not None and sim_gamma > 0:
@@ -619,6 +626,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                          hse_density_alpha=1.0,
                          idbr_bridge_scores=None,
                          idbr_bridge_beta=0.0,
+                         idbr_bridge_pool_size=0,
                          idbr_local_seed_beta=0.0,
                          idbr_boundary_penalty_gamma=0.0,
                          idbr_boundary_penalty_sim_gamma=0.5,
@@ -649,6 +657,10 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     hse_density_alpha = max(0.0, float(hse_density_alpha))
     idbr_bridge_beta = max(0.0, float(idbr_bridge_beta))
     use_idbr_bridge = idbr_bridge_beta > 0
+    idbr_bridge_pool_size = max(0, min(int(idbr_bridge_max_states), 512))
+    idbr_boundary_pool_size = max(0, min(idbr_bridge_pool_size, 256))
+    idbr_local_seed_beta = max(0.0, float(idbr_local_seed_beta))
+    use_idbr_local_seed = idbr_local_seed_beta > 0
     idbr_boundary_penalty_gamma = max(0.0, float(idbr_boundary_penalty_gamma))
     idbr_boundary_penalty_sim_gamma = max(0.0, float(idbr_boundary_penalty_sim_gamma))
     idbr_boundary_penalty_cohesion_gamma = max(0.0, float(idbr_boundary_penalty_cohesion_gamma))
@@ -659,6 +671,11 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                                  or idbr_boundary_penalty_bridge_gamma > 0)
     use_hse = (hse_high_order_beta > 0 or hse_comm_cohesion_beta > 0
                or hse_boundary_gamma > 0 or hse_comm_direct_beta > 0)
+    idbr_candidate_pool_size = 0
+    if use_idbr_bridge:
+        idbr_candidate_pool_size = idbr_bridge_pool_size
+    if use_idbr_boundary_penalty:
+        idbr_candidate_pool_size = idbr_boundary_pool_size if idbr_candidate_pool_size == 0 else min(idbr_candidate_pool_size, idbr_boundary_pool_size)
     visited = {q}
     frontier = set(adj[q]) - visited
     cur_sum = float(sims_q[q])
@@ -726,17 +743,27 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                 local_bridge = _idbr_local_bridge_candidate_scores(cand_arr, visited, adj)
                 if local_bridge is not None:
                     scores = scores + idbr_local_seed_beta * local_bridge
+            if idbr_candidate_pool_size > 0 and cand_arr.size > idbr_candidate_pool_size:
+                cand_arr, scores = _limit_hse_pool(cand_arr, scores, idbr_candidate_pool_size)
+            if use_idbr_boundary_penalty and idbr_boundary_pool_size > 0 and cand_arr.size > idbr_boundary_pool_size:
+                cand_arr, scores = _limit_hse_pool(cand_arr, scores, idbr_boundary_pool_size)
+            if use_idbr_bridge and idbr_bridge_pool_size > 0 and cand_arr.size > idbr_bridge_pool_size:
+                cand_arr, scores = _limit_hse_pool(cand_arr, scores, idbr_bridge_pool_size)
             if use_idbr_bridge:
                 bridge = _idbr_bridge_candidate_scores(cand_arr, idbr_bridge_scores)
                 if bridge is not None:
                     scores = scores + idbr_bridge_beta * bridge
-            if use_idbr_boundary_penalty:
+            if use_idbr_boundary_penalty and cand_arr.size > 0:
+                anchor_nodes = visited
+                if idbr_boundary_pool_size > 0 and len(anchor_nodes) > idbr_boundary_pool_size:
+                    anchor_nodes = set(list(anchor_nodes)[:idbr_boundary_pool_size])
                 boundary_pen = _idbr_boundary_penalty_scores(
                     cand_arr, visited, adj, community_halo, sims_q=sims_q,
                     bridge_scores=idbr_bridge_scores,
                     sim_gamma=idbr_boundary_penalty_sim_gamma,
                     cohesion_gamma=idbr_boundary_penalty_cohesion_gamma,
-                    bridge_gamma=idbr_boundary_penalty_bridge_gamma)
+                    bridge_gamma=idbr_boundary_penalty_bridge_gamma,
+                    anchor_nodes=anchor_nodes)
                 if boundary_pen is not None:
                     scores = scores - idbr_boundary_penalty_gamma * boundary_pen
             if use_hse:
@@ -779,6 +806,8 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     while added < max_iter and frontier:
         cand_arr = np.array(list(frontier))
         scores = sims_q[cand_arr].astype(np.float64, copy=True)
+        if idbr_candidate_pool_size > 0 and cand_arr.size > idbr_candidate_pool_size:
+            cand_arr, scores = _limit_hse_pool(cand_arr, scores, idbr_candidate_pool_size)
 
         if connectivity_boost > 0:
             conn = np.array([
@@ -990,6 +1019,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             hse_density_alpha=hse_density_alpha,
             idbr_bridge_scores=bridge_scores,
             idbr_bridge_beta=idbr_bridge_beta,
+            idbr_bridge_pool_size=idbr_bridge_pool_size,
             idbr_local_seed_beta=idbr_local_seed_beta,
             idbr_boundary_penalty_gamma=idbr_boundary_penalty_gamma,
             idbr_boundary_penalty_sim_gamma=idbr_boundary_penalty_sim_gamma,
@@ -1405,6 +1435,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             hse_density_alpha=hse_density_alpha,
             idbr_bridge_scores=bridge_scores,
             idbr_bridge_beta=idbr_bridge_beta,
+            idbr_bridge_pool_size=idbr_bridge_pool_size,
             idbr_local_seed_beta=idbr_local_seed_beta,
             idbr_boundary_penalty_gamma=idbr_boundary_penalty_gamma,
             idbr_boundary_penalty_sim_gamma=idbr_boundary_penalty_sim_gamma,
