@@ -24,6 +24,7 @@ Options:
   --run-name NAME             Batch log directory name prefix under batch_runs/
   --profile NAME              Named profile from config.profiles
   --eval-only                 Load checkpoint and skip training
+  --search-only               Alias of --eval-only for search/reuse runs
   --model-name NAME           Model/checkpoint name for save and eval-only reuse
   --ckpt-path PATH            Checkpoint path passed to train_ig.py
   --ilssc-auto                Use dataset-specific ILSSC profile from batch_datasets.json
@@ -137,7 +138,7 @@ while [[ $# -gt 0 ]]; do
       PROFILE="$2"
       shift 2
       ;;
-    --eval-only|--eval_only)
+    --eval-only|--eval_only|--search-only|--search_only)
       add_train_arg "--eval_only"
       shift
       ;;

@@ -35,7 +35,7 @@
     "intent_rerank_alpha": 0,
     "lambda_ic_spnm": 0,
     "compute_structure_metrics": true,
-    "ckpt_interval": 0
+    "ckpt_interval": 10
   },
   "profiles": {
     "ilssc_auto": {
