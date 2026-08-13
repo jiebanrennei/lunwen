@@ -1328,6 +1328,14 @@ if __name__ == '__main__':
                         help='Top query-similar neighbors expanded per diffusion state; 0 expands all neighbors')
     parser.add_argument('--idbr_local_seed_beta', type=float, default=0.0,
                         help='IDBR local two-step bridge weight for greedy initial seed only')
+    parser.add_argument('--idbr_boundary_penalty_gamma', type=float, default=0.0,
+                        help='Greedy boundary penalty weight for high-bridge low-cohesion suppression')
+    parser.add_argument('--idbr_boundary_penalty_sim_gamma', type=float, default=0.5,
+                        help='Weight of low-similarity risk inside greedy boundary penalty')
+    parser.add_argument('--idbr_boundary_penalty_cohesion_gamma', type=float, default=0.5,
+                        help='Weight of low-cohesion risk inside greedy boundary penalty')
+    parser.add_argument('--idbr_boundary_penalty_bridge_gamma', type=float, default=1.0,
+                        help='Weight of bridge strength inside greedy boundary penalty')
     parser.add_argument('--greedy_recall_expand_size', type=int, default=0,
                         help='Add up to N high-order frontier nodes after HSE core community selection')
     parser.add_argument('--greedy_recall_min_sim_delta', type=float, default=0.0,
@@ -2132,6 +2140,10 @@ if __name__ == '__main__':
             idbr_bridge_max_states=args.idbr_bridge_max_states,
             idbr_bridge_fanout=args.idbr_bridge_fanout,
             idbr_local_seed_beta=args.idbr_local_seed_beta,
+            idbr_boundary_penalty_gamma=args.idbr_boundary_penalty_gamma,
+            idbr_boundary_penalty_sim_gamma=args.idbr_boundary_penalty_sim_gamma,
+            idbr_boundary_penalty_cohesion_gamma=args.idbr_boundary_penalty_cohesion_gamma,
+            idbr_boundary_penalty_bridge_gamma=args.idbr_boundary_penalty_bridge_gamma,
             recall_expand_size=args.greedy_recall_expand_size,
             recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta
         )
@@ -2171,6 +2183,10 @@ if __name__ == '__main__':
                                             idbr_bridge_max_states=args.idbr_bridge_max_states,
                                             idbr_bridge_fanout=args.idbr_bridge_fanout,
                                             idbr_local_seed_beta=args.idbr_local_seed_beta,
+                                            idbr_boundary_penalty_gamma=args.idbr_boundary_penalty_gamma,
+                                            idbr_boundary_penalty_sim_gamma=args.idbr_boundary_penalty_sim_gamma,
+                                            idbr_boundary_penalty_cohesion_gamma=args.idbr_boundary_penalty_cohesion_gamma,
+                                            idbr_boundary_penalty_bridge_gamma=args.idbr_boundary_penalty_bridge_gamma,
                                             recall_expand_size=args.greedy_recall_expand_size,
                                             recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta)
 

@@ -96,6 +96,14 @@ Options:
   --idbr-bridge-max-states N  Max sparse states kept per query diffusion step
   --idbr-bridge-fanout N      Top query-similar neighbors expanded per diffusion state; 0=all
   --idbr-local-seed-beta X    IDBR local two-step bridge weight for greedy initial seed
+  --idbr-boundary-penalty-gamma X
+                              Greedy boundary penalty weight (high-bridge low-cohesion suppression)
+  --idbr-boundary-penalty-sim-gamma X
+                              Weight of low-similarity risk inside boundary penalty
+  --idbr-boundary-penalty-cohesion-gamma X
+                              Weight of low-cohesion risk inside boundary penalty
+  --idbr-boundary-penalty-bridge-gamma X
+                              Weight of bridge strength inside boundary penalty
   --greedy-recall-expand-size N
                               Add up to N high-order frontier nodes after core community selection
   --greedy-recall-min-sim-delta X
@@ -516,6 +524,26 @@ while [[ $# -gt 0 ]]; do
       ;;
     --idbr-local-seed-beta|--idbr_local_seed_beta)
       add_train_arg "--idbr_local_seed_beta"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-boundary-penalty-gamma|--idbr_boundary_penalty_gamma)
+      add_train_arg "--idbr_boundary_penalty_gamma"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-boundary-penalty-sim-gamma|--idbr_boundary_penalty_sim_gamma)
+      add_train_arg "--idbr_boundary_penalty_sim_gamma"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-boundary-penalty-cohesion-gamma|--idbr_boundary_penalty_cohesion_gamma)
+      add_train_arg "--idbr_boundary_penalty_cohesion_gamma"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --idbr-boundary-penalty-bridge-gamma|--idbr_boundary_penalty_bridge_gamma)
+      add_train_arg "--idbr_boundary_penalty_bridge_gamma"
       add_train_arg "$2"
       shift 2
       ;;
