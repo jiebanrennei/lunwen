@@ -648,6 +648,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     hse_density = bool(hse_density)
     hse_density_alpha = max(0.0, float(hse_density_alpha))
     idbr_bridge_beta = max(0.0, float(idbr_bridge_beta))
+    use_idbr_bridge = idbr_bridge_beta > 0
     idbr_boundary_penalty_gamma = max(0.0, float(idbr_boundary_penalty_gamma))
     idbr_boundary_penalty_sim_gamma = max(0.0, float(idbr_boundary_penalty_sim_gamma))
     idbr_boundary_penalty_cohesion_gamma = max(0.0, float(idbr_boundary_penalty_cohesion_gamma))
