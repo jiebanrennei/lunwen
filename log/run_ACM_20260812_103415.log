@@ -1,0 +1,18 @@
+[log] 运行日志写入: log/run_ACM_20260812_103415.log
+[config] cand_sources=embed num_cand_per_node=0 cand_label_mode=soft cand_dist_k=16 cand_dist_tau=0.2 lambda_cand_bce=0.0 lambda_ic_spnm=0.0 ic_spnm_pos=20 ic_spnm_neg=256 ic_spnm_hard_pool=2048 ic_spnm_pos_mode=neighbor ic_spnm_frontier_ratio=0.5 ic_spnm_frontier_hops=2 lambda_ilssc=0.1 ilssc_seed_size=8 ilssc_neg=256 ilssc_hard_pool=2048 ilssc_hops=2 ilssc_neg_mode=conservative ilssc_gate_mode=prior ilssc_high_order_beta=0.2 ilssc_warmup=30 ilssc_ramp=50 ilssc_use_intent_dist=False intent_dist_k=16 intent_dist_tau=0.2 intent_dist_beta=0.5 intent_dist_proto_mode=random intent_dist_stable=False intent_dist_update_interval=10 intent_dist_ema=0.7 intent_dist_anchor_pool=0 intent_dist_conf_tau=0.05 intent_dist_min_conf=0.0 relation_fusion=icra cs_topk=(5, 10, 20, 50, 'oracle') cs_w_list=(0.13,) greedy_patience=1 greedy_min_gain_tol=0.0001 frontier_batch_size=2 greedy_connectivity_boost=0.0 greedy_select_mode=first_drop greedy_init_seed_size=1 greedy_init_seed_hops=1 greedy_init_seed_conn_beta=0.3 greedy_high_order_beta=0.2 greedy_comm_cohesion_beta=0.05 greedy_comm_direct_beta=0.1 greedy_boundary_gamma=0.03 greedy_hse_pool_size=64 greedy_hse_normalize=False greedy_hse_density=False greedy_hse_density_alpha=1.0 idbr_bridge_beta=0.2 idbr_bridge_steps=(2, 4) idbr_bridge_decay=0.7 idbr_bridge_max_states=50000 greedy_recall_expand_size=0 greedy_recall_min_sim_delta=0.0 include_query_in_pred=False eval_perturb=none:0.0 model_name=hse_target64 seed=123
+Using CPU
+Using GPU: NVIDIA GeForce RTX 2080 Ti
+  [cs_full_graph] ACM: merged ['pap.npz', 'psp.npz'] -> 4359766 directed edges (no sparsify)
+/root/miniconda3/lib/python3.8/site-packages/scipy/sparse/_index.py:146: SparseEfficiencyWarning: Changing the sparsity structure of a csr_matrix is expensive. lil_matrix is more efficient.
+  self._set_arrayXarray(i, j, x)
+  [sparsify] pap.npz: 57853 -> 30852 edges (avg_deg 14 -> 8, top-k=10)
+  [sparsify] psp.npz: 4338213 -> 75790 edges (avg_deg 1079 -> 19, top-k=10)
+[data] 多关系 R=2: pap(30852 edges), psp(75790 edges)
+[intent] dynamic query-based, dim=256
+[encoder] MultiRelation+ICRA  R=2 hii_heads=1 icra_heads=1 icra_dim=64
+Traceback (most recent call last):
+  File "/root/code/lunwne/lunwen/train_ig.py", line 1425, in <module>
+    loaded_next_epoch, train_elapsed_prev = _load_ckpt(ckpt_path)
+  File "/root/code/lunwne/lunwen/train_ig.py", line 1413, in _load_ckpt
+    rng_q.set_state(ckpt['rng_q'])
+TypeError: RNG state must be a torch.ByteTensor

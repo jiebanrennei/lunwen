@@ -1,0 +1,84 @@
+nohup: ignoring input
+Unknown argument: --greedy_patience
+Usage:
+  bash run_batch.sh [options] [-- extra train_ig.py args]
+
+Options:
+  -c, --config PATH           Batch config JSON. Default: batch_datasets.json
+  -d, --datasets LIST         Comma-separated datasets, e.g. ACM,DBLP,IMDB_NEW
+  -e, --epochs N              Override --num_epochs
+  --dry-run                   Print commands without running training
+  --run-name NAME             Batch log directory name prefix under batch_runs/
+  --profile NAME              Named profile from config.profiles
+  --eval-only                 Load checkpoint and skip training
+  --ckpt-path PATH            Checkpoint path passed to train_ig.py
+  --ilssc-auto                Use dataset-specific ILSSC profile from batch_datasets.json
+  --dataset-arg DATASET KEY VALUE
+                              Override one train_ig.py arg for one dataset
+  --acm-warmup N              ACM ILSSC warmup epochs
+  --acm-ramp N                ACM ILSSC ramp epochs
+  --dblp-warmup N             DBLP ILSSC warmup epochs
+  --dblp-ramp N               DBLP ILSSC ramp epochs
+  --imdb-warmup N             IMDB_NEW ILSSC warmup epochs
+  --imdb-ramp N               IMDB_NEW ILSSC ramp epochs
+  --rl                        Enable actor-critic search
+  --ac-epochs N               Actor-critic epochs. Default: 100
+  --ac-size-sweep LIST        Actor-critic size sweep list
+  --ic-spnm WEIGHT            Enable IC-SPNM with this lambda
+  --frontier-ic-spnm WEIGHT   Enable frontier-aware IC-SPNM mix mode
+  --relation-fusion TYPE      Relation fusion type: icra or transformer
+  --lambda-ilssc WEIGHT       Enable ILSSC with this lambda
+  --ilssc-seed-size N         ILSSC seed size
+  --ilssc-hard-pool N         ILSSC hard-negative candidate pool size
+  --ilssc-neg-mode MODE       ILSSC negative mining: conservative or hard
+  --ilssc-gate-mode MODE      ILSSC seed weighting: prior, intent, or mix
+  --ilssc-high-order-beta X   IDBR-inspired sparse high-order prior weight
+  --ilssc-warmup-epochs N     Disable ILSSC for first N epochs
+  --ilssc-ramp-epochs N       Linearly ramp ILSSC weight after warmup
+  --id-ilssc                  Enable intent-distribution-aware ILSSC
+  --intent-dist-k N           Number of ID-ILSSC intent prototypes
+  --intent-dist-tau X         ID-ILSSC intent distribution temperature
+  --intent-dist-beta X        ID-ILSSC distribution similarity weight
+  --intent-dist-proto-mode M  ID-ILSSC prototype mode: random or score
+  --intent-dist-stable        Enable stable confidence-gated intent distribution memory
+  --intent-dist-update-interval N
+                              Stable intent distribution memory update interval
+  --intent-dist-memory-warmup N
+                              Stable intent distribution memory warmup epochs
+  --intent-dist-ema X         EMA coefficient for stable intent prototypes
+  --intent-dist-anchor-pool N Anchor pool size for stable prototype sampling; 0=all nodes
+  --intent-dist-conf-tau X    Confidence gate temperature
+  --intent-dist-min-conf X    Minimum confidence product for gate
+  --greedy-init-seed-size N   Greedy initial seed size
+  --greedy-init-seed-hops N   Greedy initial seed hops
+  --greedy-high-order-beta X  HSE-Greedy query-candidate high-order reachability weight
+  --greedy-comm-cohesion-beta X
+                              HSE-Greedy candidate-to-community halo cohesion weight
+  --greedy-comm-direct-beta X HSE-Greedy candidate-to-current-community direct cohesion weight
+  --greedy-boundary-gamma X   HSE-Greedy boundary expansion penalty weight
+  --greedy-hse-pool-size N    Top-K frontier candidates scored by HSE; 0=full frontier
+  --greedy-recall-expand-size N
+                              Add up to N high-order frontier nodes after core community selection
+  --greedy-recall-min-sim-delta X
+                              Fallback candidate min similarity = avg_sim + X
+  -h, --help                  Show this help
+
+Examples:
+  bash run_batch.sh
+  bash run_batch.sh -d ACM,DBLP
+  bash run_batch.sh --dry-run -d ACM --rl
+  bash run_batch.sh -d IMDB_NEW --rl --ac-size-sweep 200,400,800,1200,1600
+  bash run_batch.sh -d ACM --frontier-ic-spnm 0.003
+  bash run_batch.sh -d ACM,DBLP,IMDB_NEW --relation-fusion transformer
+  bash run_batch.sh --ilssc-auto -d ACM,DBLP,IMDB_NEW
+  bash run_batch.sh --ilssc-auto -d ACM,DBLP,IMDB_NEW --acm-warmup 20 --acm-ramp 40 --dblp-warmup 10 --dblp-ramp 30 --imdb-warmup 0 --imdb-ramp 0
+  bash run_batch.sh --ilssc-auto -d ACM,DBLP,IMDB_NEW --dataset-arg ACM ilssc_seed_size 6 --dataset-arg DBLP ilssc_seed_size 8
+  bash run_batch.sh --ilssc-auto --id-ilssc -d ACM,DBLP,IMDB_NEW --intent-dist-k 16 --intent-dist-beta 0.5
+  bash run_batch.sh --run-name scid_ilssc --profile scid_ilssc_auto -d ACM,DBLP,IMDB_NEW --intent-dist-beta 0.2 --intent-dist-stable
+  bash run_batch.sh --run-name hidbr_ilssc --profile hidbr_ilssc_auto -d ACM,DBLP,IMDB_NEW --ilssc-high-order-beta 0.2
+  bash run_batch.sh --run-name hse_greedy --profile hidbr_ilssc_auto -d ACM,DBLP,IMDB_NEW --ilssc-high-order-beta 0.2 --greedy-high-order-beta 0.2 --greedy-comm-direct-beta 0.1 --greedy-comm-cohesion-beta 0.05 --greedy-boundary-gamma 0.03 --greedy-hse-pool-size 512 --greedy-recall-expand-size 128
+  bash run_batch.sh --run-name hse_eval_only --profile hse_greedy_auto --eval-only -d ACM,DBLP,IMDB_NEW --greedy-hse-pool-size 64
+  bash run_batch.sh --run-name ilssc_auto -d ACM,DBLP,IMDB_NEW --profile ilssc_auto
+  bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW --lambda-ilssc 0.1 --ilssc-seed-size 8 --greedy-init-seed-size 4 --greedy-init-seed-hops 2
+  bash run_batch.sh --run-name ilssc_seed -d ACM,DBLP,IMDB_NEW -- --lambda_ilssc 0.1 --greedy_init_seed_size 4
+  bash run_batch.sh -d DBLP -- --cs_relations apa --cs_w_list 0.10,0.12,0.14,0.16
