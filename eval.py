@@ -440,17 +440,22 @@ def _weighted_overlap_score(left_nbrs, right_nbrs, adj):
 
 
 def _idbr_local_bridge_candidate_scores(cand_arr, anchors, adj):
-    anchors = [int(a) for a in anchors]
+    anchors = sorted({int(a) for a in anchors})
     if not anchors or cand_arr.size == 0:
         return None
-    vals = np.zeros(cand_arr.size, dtype=np.float64)
+    max_anchors = 32
+    if len(anchors) > max_anchors:
+        step = max(1, len(anchors) // max_anchors)
+        anchors = anchors[::step][:max_anchors]
+    cand_nodes = [int(c) for c in cand_arr.tolist()]
+    cand_nbrs = [adj[c] for c in cand_nodes]
+    vals = np.zeros(len(cand_nodes), dtype=np.float64)
     for anchor in anchors:
         a_nbrs = adj[int(anchor)]
         a_deg = max(1, len(a_nbrs))
         if not a_nbrs:
             continue
-        for i, cand in enumerate(cand_arr):
-            c_nbrs = adj[int(cand)]
+        for i, c_nbrs in enumerate(cand_nbrs):
             vals[i] += _weighted_overlap_score(a_nbrs, c_nbrs, adj) / a_deg
     vals = vals / float(len(anchors))
     return _minmax_norm(vals)
@@ -657,8 +662,8 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     hse_density_alpha = max(0.0, float(hse_density_alpha))
     idbr_bridge_beta = max(0.0, float(idbr_bridge_beta))
     use_idbr_bridge = idbr_bridge_beta > 0
-    idbr_bridge_pool_size = max(0, min(int(idbr_bridge_max_states), 512))
-    idbr_boundary_pool_size = max(0, min(idbr_bridge_pool_size, 256))
+    idbr_bridge_pool_size = max(0, min(int(idbr_bridge_pool_size), 512))
+    idbr_boundary_pool_size = 256 if idbr_bridge_pool_size <= 0 else min(idbr_bridge_pool_size, 256)
     idbr_local_seed_beta = max(0.0, float(idbr_local_seed_beta))
     use_idbr_local_seed = idbr_local_seed_beta > 0
     idbr_boundary_penalty_gamma = max(0.0, float(idbr_boundary_penalty_gamma))
@@ -666,9 +671,9 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     idbr_boundary_penalty_cohesion_gamma = max(0.0, float(idbr_boundary_penalty_cohesion_gamma))
     idbr_boundary_penalty_bridge_gamma = max(0.0, float(idbr_boundary_penalty_bridge_gamma))
     use_idbr_boundary_penalty = (idbr_boundary_penalty_gamma > 0
-                                 or idbr_boundary_penalty_sim_gamma > 0
-                                 or idbr_boundary_penalty_cohesion_gamma > 0
-                                 or idbr_boundary_penalty_bridge_gamma > 0)
+                                 and idbr_boundary_penalty_bridge_gamma > 0
+                                 and (idbr_boundary_penalty_sim_gamma > 0
+                                      or idbr_boundary_penalty_cohesion_gamma > 0))
     use_hse = (hse_high_order_beta > 0 or hse_comm_cohesion_beta > 0
                or hse_boundary_gamma > 0 or hse_comm_direct_beta > 0)
     idbr_candidate_pool_size = 0
@@ -676,6 +681,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
         idbr_candidate_pool_size = idbr_bridge_pool_size
     if use_idbr_boundary_penalty:
         idbr_candidate_pool_size = idbr_boundary_pool_size if idbr_candidate_pool_size == 0 else min(idbr_candidate_pool_size, idbr_boundary_pool_size)
+    use_struct_halo = use_hse or use_idbr_boundary_penalty
     visited = {q}
     frontier = set(adj[q]) - visited
     cur_sum = float(sims_q[q])
@@ -683,7 +689,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     node_order = [q]
     cum_sims = [cur_sum]
     added = 0
-    community_halo = set(adj[q]) | {q} if use_hse else None
+    community_halo = set(adj[q]) | {q} if use_struct_halo else None
     use_early_stop = early_stop_w is not None and early_stop_avg is not None
     early_stop_patience = max(0, int(early_stop_patience))
     early_stop_min_gain_tol = max(0.0, float(early_stop_min_gain_tol))
@@ -733,13 +739,9 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                 scores = scores[keep]
                 if cand_arr.size == 0:
                     break
-            if init_seed_conn_beta > 0:
-                conn = np.array([
-                    len(adj[int(c)] & visited) / max(1, len(adj[int(c)]))
-                    for c in cand_arr
-                ], dtype=np.float64)
-                scores = scores + init_seed_conn_beta * conn
             if use_idbr_local_seed:
+                if idbr_candidate_pool_size > 0 and cand_arr.size > idbr_candidate_pool_size:
+                    cand_arr, scores = _limit_hse_pool(cand_arr, scores, idbr_candidate_pool_size)
                 local_bridge = _idbr_local_bridge_candidate_scores(cand_arr, visited, adj)
                 if local_bridge is not None:
                     scores = scores + idbr_local_seed_beta * local_bridge
@@ -799,7 +801,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                     break
             for node in new_nodes:
                 frontier.update(adj[node] - visited)
-                if use_hse:
+                if use_struct_halo:
                     community_halo.update(adj[node])
                     community_halo.add(node)
 
@@ -825,12 +827,16 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                 scores = scores + idbr_bridge_beta * bridge
 
         if use_idbr_boundary_penalty:
+            anchor_nodes = visited
+            if idbr_boundary_pool_size > 0 and len(anchor_nodes) > idbr_boundary_pool_size:
+                anchor_nodes = set(list(anchor_nodes)[:idbr_boundary_pool_size])
             boundary_pen = _idbr_boundary_penalty_scores(
                 cand_arr, visited, adj, community_halo, sims_q=sims_q,
                 bridge_scores=idbr_bridge_scores,
                 sim_gamma=idbr_boundary_penalty_sim_gamma,
                 cohesion_gamma=idbr_boundary_penalty_cohesion_gamma,
-                bridge_gamma=idbr_boundary_penalty_bridge_gamma)
+                bridge_gamma=idbr_boundary_penalty_bridge_gamma,
+                anchor_nodes=anchor_nodes)
             if boundary_pen is not None:
                 scores = scores - idbr_boundary_penalty_gamma * boundary_pen
 
@@ -1019,7 +1025,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             hse_density_alpha=hse_density_alpha,
             idbr_bridge_scores=bridge_scores,
             idbr_bridge_beta=idbr_bridge_beta,
-            idbr_bridge_pool_size=idbr_bridge_pool_size,
+            idbr_bridge_pool_size=idbr_bridge_max_states,
             idbr_local_seed_beta=idbr_local_seed_beta,
             idbr_boundary_penalty_gamma=idbr_boundary_penalty_gamma,
             idbr_boundary_penalty_sim_gamma=idbr_boundary_penalty_sim_gamma,
@@ -1435,7 +1441,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             hse_density_alpha=hse_density_alpha,
             idbr_bridge_scores=bridge_scores,
             idbr_bridge_beta=idbr_bridge_beta,
-            idbr_bridge_pool_size=idbr_bridge_pool_size,
+            idbr_bridge_pool_size=idbr_bridge_max_states,
             idbr_local_seed_beta=idbr_local_seed_beta,
             idbr_boundary_penalty_gamma=idbr_boundary_penalty_gamma,
             idbr_boundary_penalty_sim_gamma=idbr_boundary_penalty_sim_gamma,
