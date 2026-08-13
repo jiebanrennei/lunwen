@@ -416,6 +416,58 @@ def _recall_expand_community(q, comm, sims_q, adj, max_add=0, pool_size=0,
     return comm
 
 
+def _prune_community_edges(q, comm, sims_q, adj, avg, w,
+                           max_remove=2, prune_pool_size=32,
+                           min_size=1, min_gain_tol=0.0):
+    """轻量后处理: 只删掉最边缘、最不划算的少量节点。"""
+    comm = set(int(v) for v in comm)
+    q = int(q)
+    max_remove = max(0, int(max_remove))
+    prune_pool_size = max(0, int(prune_pool_size))
+    min_size = max(1, int(min_size))
+    min_gain_tol = max(0.0, float(min_gain_tol))
+    if max_remove <= 0 or len(comm) <= min_size:
+        return comm
+
+    for _ in range(max_remove):
+        if len(comm) <= min_size:
+            break
+        base_sum = float(sum(float(sims_q[v]) for v in comm))
+        base_n = len(comm)
+        base_density = (base_sum - base_n * float(avg)) / (base_n ** float(w))
+
+        cand_nodes = [v for v in comm if v != q]
+        if not cand_nodes:
+            break
+
+        if prune_pool_size > 0 and len(cand_nodes) > prune_pool_size:
+            support = []
+            for v in cand_nodes:
+                deg = max(1, len(adj[v]))
+                inside = len(adj[v] & comm)
+                support.append((inside / deg, float(sims_q[v]), v))
+            support.sort(key=lambda x: (x[0], x[1]))
+            cand_nodes = [v for _, _, v in support[:prune_pool_size]]
+
+        best_node = None
+        best_density = base_density
+        for v in cand_nodes:
+            new_n = base_n - 1
+            if new_n < min_size:
+                continue
+            new_sum = base_sum - float(sims_q[v])
+            new_density = (new_sum - new_n * float(avg)) / (new_n ** float(w))
+            if new_density > best_density + min_gain_tol:
+                best_density = new_density
+                best_node = v
+
+        if best_node is None:
+            break
+        comm.remove(best_node)
+
+    return comm
+
+
 def _bfs_farthest(start, node_set, adj):
     """从 start 出发在 node_set 诱导子图上 BFS,返回 (最远节点, 最远距离)。"""
     dist = {start: 0}
@@ -825,6 +877,12 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                 min_gain_tol=greedy_min_gain_tol,
                 select_mode=greedy_select_mode,
                 min_size=greedy_init_seed_size)
+            comm = _prune_community_edges(
+                q, comm, sims_q, adj, density_avg, w,
+                max_remove=2,
+                prune_pool_size=32,
+                min_size=greedy_init_seed_size,
+                min_gain_tol=greedy_min_gain_tol)
             if recall_expand_size > 0:
                 comm = _recall_expand_community(
                     q, comm, sims_q, adj,
@@ -1215,6 +1273,12 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                 min_gain_tol=greedy_min_gain_tol,
                 select_mode=greedy_select_mode,
                 min_size=greedy_init_seed_size)
+            comm = _prune_community_edges(
+                q, comm, sims_q, adj, density_avg, w,
+                max_remove=2,
+                prune_pool_size=32,
+                min_size=greedy_init_seed_size,
+                min_gain_tol=greedy_min_gain_tol)
             if recall_expand_size > 0:
                 comm = _recall_expand_community(
                     q, comm, sims_q, adj,
