@@ -71,6 +71,8 @@ Options:
                               HSE-Greedy candidate-to-community halo cohesion weight
   --greedy-comm-direct-beta X HSE-Greedy candidate-to-current-community direct cohesion weight
   --greedy-boundary-gamma X   HSE-Greedy boundary expansion penalty weight
+  --greedy-patience N         Stop after N non-improving greedy steps; 0=first drop
+  --greedy-min-gain-tol X     Minimum greedy F1 gain tolerance
   --greedy-hse-pool-size N    Top-K frontier candidates scored by HSE; 0=full frontier
   --greedy-hse-normalize      Normalize HSE structural terms inside candidate pool
   --greedy-hse-density        Use HSE-adjusted utility for greedy density selection
@@ -391,6 +393,16 @@ while [[ $# -gt 0 ]]; do
       ;;
     --greedy-boundary-gamma|--greedy_boundary_gamma|--hse-boundary-gamma|--hse_boundary_gamma)
       add_train_arg "--greedy_boundary_gamma"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --greedy-patience|--greedy_patience)
+      add_train_arg "--greedy_patience"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --greedy-min-gain-tol|--greedy_min_gain_tol)
+      add_train_arg "--greedy_min_gain_tol"
       add_train_arg "$2"
       shift 2
       ;;
