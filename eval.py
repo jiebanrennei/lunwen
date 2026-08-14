@@ -418,7 +418,8 @@ def _recall_expand_community(q, comm, sims_q, adj, max_add=0, pool_size=0,
 
 def _prune_community_edges(q, comm, sims_q, adj, avg, w,
                            max_remove=2, prune_pool_size=32,
-                           min_size=1, min_gain_tol=0.0):
+                           min_size=1, min_gain_tol=0.0,
+                           size_penalty=0.0):
     """轻量后处理: 只删掉最边缘、最不划算的少量节点。"""
     comm = set(int(v) for v in comm)
     q = int(q)
@@ -426,6 +427,7 @@ def _prune_community_edges(q, comm, sims_q, adj, avg, w,
     prune_pool_size = max(0, int(prune_pool_size))
     min_size = max(1, int(min_size))
     min_gain_tol = max(0.0, float(min_gain_tol))
+    size_penalty = max(0.0, float(size_penalty))
     if max_remove <= 0 or len(comm) <= min_size:
         return comm
 
@@ -435,6 +437,7 @@ def _prune_community_edges(q, comm, sims_q, adj, avg, w,
         base_sum = float(sum(float(sims_q[v]) for v in comm))
         base_n = len(comm)
         base_density = (base_sum - base_n * float(avg)) / (base_n ** float(w))
+        base_score = base_density - size_penalty * base_n
 
         cand_nodes = [v for v in comm if v != q]
         if not cand_nodes:
@@ -450,15 +453,16 @@ def _prune_community_edges(q, comm, sims_q, adj, avg, w,
             cand_nodes = [v for _, _, v in support[:prune_pool_size]]
 
         best_node = None
-        best_density = base_density
+        best_score = base_score
         for v in cand_nodes:
             new_n = base_n - 1
             if new_n < min_size:
                 continue
             new_sum = base_sum - float(sims_q[v])
             new_density = (new_sum - new_n * float(avg)) / (new_n ** float(w))
-            if new_density > best_density + min_gain_tol:
-                best_density = new_density
+            new_score = new_density - size_penalty * new_n
+            if new_score > best_score + min_gain_tol:
+                best_score = new_score
                 best_node = v
 
         if best_node is None:
@@ -565,7 +569,8 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                          early_stop_avg=None,
                          early_stop_patience=0,
                          early_stop_min_gain_tol=0.0,
-                         early_stop_min_size=1):
+                         early_stop_min_size=1,
+                         size_penalty=0.0):
     """
     单次贪心扩展: 从 frontier 中按相似度/结构连接度选择节点, 记录累计 sim 和。
     HSE: 高阶可达 + 社区凝聚 + 边界惩罚 可选加入候选排序。
@@ -583,6 +588,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     hse_comm_direct_beta = max(0.0, float(hse_comm_direct_beta))
     hse_normalize = bool(hse_normalize)
     hse_density = bool(hse_density)
+    size_penalty = max(0.0, float(size_penalty))
     use_hse = (hse_high_order_beta > 0 or hse_comm_cohesion_beta > 0
                or hse_boundary_gamma > 0 or hse_comm_direct_beta > 0)
     visited = {q}
@@ -597,7 +603,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     early_stop_patience = max(0, int(early_stop_patience))
     early_stop_min_gain_tol = max(0.0, float(early_stop_min_gain_tol))
     early_stop_min_size = max(1, int(early_stop_min_size))
-    early_best_density = None
+    early_best_score = None
     early_bad_steps = 0
 
     def _utility_map(cand_arr, scores):
@@ -615,16 +621,17 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
         return float(utilities.get(int(node), sims_q[node]))
 
     def _should_stop_trace():
-        nonlocal early_best_density, early_bad_steps
+        nonlocal early_best_score, early_bad_steps
         if not use_early_stop or len(cum_sims) < early_stop_min_size:
             return False
         size = float(len(cum_sims))
         density = (cum_sims[-1] - size * float(early_stop_avg)) / (size ** float(early_stop_w))
-        if early_best_density is None or density > early_best_density:
-            early_best_density = density
+        score = density - size_penalty * size
+        if early_best_score is None or score > early_best_score:
+            early_best_score = score
             early_bad_steps = 0
             return False
-        if early_stop_min_gain_tol > 0 and early_best_density - density <= early_stop_min_gain_tol:
+        if early_stop_min_gain_tol > 0 and early_best_score - score <= early_stop_min_gain_tol:
             return False
         early_bad_steps += 1
         return early_bad_steps > early_stop_patience
@@ -746,24 +753,26 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
 
 def _best_community_for_w(node_order, cum_sims, avg, w,
                           patience=0, min_gain_tol=0.0,
-                          select_mode='first_drop', min_size=1):
+                          select_mode='first_drop', min_size=1,
+                          size_penalty=0.0):
     """在一条扩展轨迹上, 对给定 w 找密度峰值, 返回对应社区 set。"""
     sizes = np.arange(1, len(cum_sims) + 1, dtype=np.float64)
     densities = (cum_sims - sizes * avg) / (sizes ** w)
+    scores = densities - size_penalty * sizes
     select_mode = str(select_mode).lower()
     min_idx = min(max(0, int(min_size) - 1), len(cum_sims) - 1)
     if select_mode == 'global':
-        rel_best = int(np.argmax(densities[min_idx:]))
+        rel_best = int(np.argmax(scores[min_idx:]))
         best_idx = min_idx + rel_best
         return set(node_order[:best_idx + 1])
 
     patience = max(0, int(patience))
     min_gain_tol = max(0.0, float(min_gain_tol))
     best_idx = min_idx
-    best_d = densities[min_idx]
+    best_d = scores[min_idx]
     bad_steps = 0
-    for i in range(min_idx + 1, len(densities)):
-        d = densities[i]
+    for i in range(min_idx + 1, len(scores)):
+        d = scores[i]
         if d > best_d:
             best_d = d
             best_idx = i
@@ -782,6 +791,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             compute_structure=False,
                             node_boost=None, boost_factor=1.5, queries=None,
                             greedy_patience=0, greedy_min_gain_tol=0.0,
+                            greedy_size_penalty=0.0,
                             frontier_batch_size=1, include_query_in_pred=False,
                             greedy_connectivity_boost=0.0,
                             greedy_select_mode='first_drop',
@@ -871,7 +881,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             early_stop_avg=density_avg,
             early_stop_patience=greedy_patience,
             early_stop_min_gain_tol=greedy_min_gain_tol,
-            early_stop_min_size=greedy_init_seed_size)
+            early_stop_min_size=greedy_init_seed_size,
+            size_penalty=greedy_size_penalty)
 
         for w in w_list:
             comm = _best_community_for_w(
@@ -879,13 +890,15 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                 patience=greedy_patience,
                 min_gain_tol=greedy_min_gain_tol,
                 select_mode=greedy_select_mode,
-                min_size=greedy_init_seed_size)
+                min_size=greedy_init_seed_size,
+                size_penalty=greedy_size_penalty)
             comm = _prune_community_edges(
                 q, comm, sims_q, adj, density_avg, w,
                 max_remove=5,
                 prune_pool_size=64,
                 min_size=greedy_init_seed_size,
-                min_gain_tol=greedy_min_gain_tol)
+                min_gain_tol=greedy_min_gain_tol,
+                size_penalty=greedy_size_penalty)
             if recall_expand_size > 0:
                 comm = _recall_expand_community(
                     q, comm, sims_q, adj,
@@ -1180,6 +1193,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      edge_index=None,
                                      intent_proj_fn=None, intent_rerank_alpha=0.0,
                                      greedy_patience=0, greedy_min_gain_tol=0.0,
+                                     greedy_size_penalty=0.0,
                                      frontier_batch_size=1, include_query_in_pred=False,
                                      greedy_connectivity_boost=0.0,
                                      greedy_select_mode='first_drop',
@@ -1270,7 +1284,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             early_stop_avg=density_avg,
             early_stop_patience=greedy_patience,
             early_stop_min_gain_tol=greedy_min_gain_tol,
-            early_stop_min_size=greedy_init_seed_size)
+            early_stop_min_size=greedy_init_seed_size,
+            size_penalty=greedy_size_penalty)
 
         for w in w_list:
             comm = _best_community_for_w(
@@ -1278,13 +1293,15 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                 patience=greedy_patience,
                 min_gain_tol=greedy_min_gain_tol,
                 select_mode=greedy_select_mode,
-                min_size=greedy_init_seed_size)
+                min_size=greedy_init_seed_size,
+                size_penalty=greedy_size_penalty)
             comm = _prune_community_edges(
                 q, comm, sims_q, adj, density_avg, w,
                 max_remove=5,
                 prune_pool_size=64,
                 min_size=greedy_init_seed_size,
-                min_gain_tol=greedy_min_gain_tol)
+                min_gain_tol=greedy_min_gain_tol,
+                size_penalty=greedy_size_penalty)
             if recall_expand_size > 0:
                 comm = _recall_expand_community(
                     q, comm, sims_q, adj,
