@@ -185,7 +185,7 @@ def build_fixed_queries(data, num_queries=40, seed=0, query_file=None):
     """
     y = data.y.detach().cpu().numpy()
     N = len(y)
-
+    a =1
     if query_file is not None and os.path.exists(query_file):
         with open(query_file) as f:
             q = [int(line.strip()) for line in f if line.strip()]
@@ -785,6 +785,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             frontier_batch_size=1, include_query_in_pred=False,
                             greedy_connectivity_boost=0.0,
                             greedy_select_mode='first_drop',
+                            trace_early_stop_w=None,
                             greedy_init_seed_size=1,
                             greedy_init_seed_hops=1,
                             greedy_init_seed_conn_beta=0.3,
@@ -846,7 +847,9 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
         sims_q = sims[q]
         avg = float(sims_q.mean())
         density_avg = avg
-        early_w = w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None
+        early_w = (trace_early_stop_w
+                   if trace_early_stop_w is not None
+                   else (w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None))
 
         # 只扩展一次
         node_order, cum_sims = _greedy_expand_trace(
@@ -1180,6 +1183,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      frontier_batch_size=1, include_query_in_pred=False,
                                      greedy_connectivity_boost=0.0,
                                      greedy_select_mode='first_drop',
+                                     trace_early_stop_w=None,
                                      greedy_init_seed_size=1,
                                      greedy_init_seed_hops=1,
                                      greedy_init_seed_conn_beta=0.3,
@@ -1244,7 +1248,9 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
 
         avg = float(sims_q.mean())
         density_avg = avg
-        early_w = w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None
+        early_w = (trace_early_stop_w
+                   if trace_early_stop_w is not None
+                   else (w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None))
         node_order, cum_sims = _greedy_expand_trace(
             q, sims_q, adj, max_iter,
             frontier_batch_size=frontier_batch_size,

@@ -1154,6 +1154,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
     cs_topk = parse_topk_arg(args.cs_topk)
     cs_w_list = parse_float_list_arg(args.cs_w_list)
+    trace_early_stop_w = (
+        min(cs_w_list)
+        if cs_w_list and str(args.greedy_select_mode).lower() == 'first_drop'
+        else None
+    )
     effective_num_cand_per_node = 0 if args.disable_candidate_edges else args.num_cand_per_node
     effective_lambda_intent = 0.0 if args.no_intent_loss else args.lambda_intent
     effective_adv_lambda = 0.0 if args.no_edge_feature_loss else args.adv_lambda
@@ -1206,6 +1211,7 @@ if __name__ == '__main__':
           f"cs_topk={cs_topk} cs_w_list={cs_w_list} "
           f"greedy_patience={args.greedy_patience} "
           f"greedy_min_gain_tol={args.greedy_min_gain_tol} "
+          f"trace_early_stop_w={trace_early_stop_w} "
           f"frontier_batch_size={args.frontier_batch_size} "
           f"greedy_connectivity_boost={args.greedy_connectivity_boost} "
           f"greedy_select_mode={args.greedy_select_mode} "
@@ -1879,6 +1885,7 @@ if __name__ == '__main__':
             include_query_in_pred=args.include_query_in_pred,
             greedy_connectivity_boost=args.greedy_connectivity_boost,
             greedy_select_mode=args.greedy_select_mode,
+            trace_early_stop_w=trace_early_stop_w,
             greedy_init_seed_size=args.greedy_init_seed_size,
             greedy_init_seed_hops=args.greedy_init_seed_hops,
             greedy_init_seed_conn_beta=args.greedy_init_seed_conn_beta,
@@ -1911,6 +1918,7 @@ if __name__ == '__main__':
                                             include_query_in_pred=args.include_query_in_pred,
                                             greedy_connectivity_boost=args.greedy_connectivity_boost,
                                             greedy_select_mode=args.greedy_select_mode,
+                                            trace_early_stop_w=trace_early_stop_w,
                                             greedy_init_seed_size=args.greedy_init_seed_size,
                                             greedy_init_seed_hops=args.greedy_init_seed_hops,
                                             greedy_init_seed_conn_beta=args.greedy_init_seed_conn_beta,
