@@ -73,6 +73,7 @@ Options:
   --greedy-boundary-gamma X   HSE-Greedy boundary expansion penalty weight
   --greedy-patience N         Stop after N non-improving greedy steps; 0=first drop
   --greedy-min-gain-tol X     Minimum greedy F1 gain tolerance
+  --greedy-max-size N         Hard cap on greedy community size; 0 disables the cap
   --greedy-hse-pool-size N    Top-K frontier candidates scored by HSE; 0=full frontier
   --greedy-hse-normalize      Normalize HSE structural terms inside candidate pool
   --greedy-hse-density        Use HSE-adjusted utility for greedy density selection
@@ -96,6 +97,7 @@ Examples:
   bash run_batch.sh --run-name scid_ilssc --profile scid_ilssc_auto -d ACM,DBLP,IMDB_NEW --intent-dist-beta 0.2 --intent-dist-stable
   bash run_batch.sh --run-name hidbr_ilssc --profile hidbr_ilssc_auto -d ACM,DBLP,IMDB_NEW --ilssc-high-order-beta 0.2
   bash run_batch.sh --run-name hse_greedy --profile hidbr_ilssc_auto -d ACM,DBLP,IMDB_NEW --ilssc-high-order-beta 0.2 --greedy-high-order-beta 0.2 --greedy-comm-direct-beta 0.1 --greedy-comm-cohesion-beta 0.05 --greedy-boundary-gamma 0.03 --greedy-hse-pool-size 512 --greedy-recall-expand-size 128
+  bash run_batch.sh --run-name hse_cap --profile hse_greedy_auto --eval-only -d ACM,DBLP,IMDB_NEW --greedy-hse-pool-size 64 --greedy-max-size 512
   bash run_batch.sh --run-name hse_eval_only --profile hse_greedy_auto --eval-only -d ACM,DBLP,IMDB_NEW --greedy-hse-pool-size 64
   bash run_batch.sh --run-name hse_save --profile hse_greedy_auto --model-name hse64 -d ACM,DBLP,IMDB_NEW
   bash run_batch.sh --run-name ilssc_auto -d ACM,DBLP,IMDB_NEW --profile ilssc_auto
@@ -403,6 +405,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --greedy-min-gain-tol|--greedy_min_gain_tol)
       add_train_arg "--greedy_min_gain_tol"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --greedy-max-size|--greedy_max_size)
+      add_train_arg "--greedy_max_size"
       add_train_arg "$2"
       shift 2
       ;;

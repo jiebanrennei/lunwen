@@ -1111,6 +1111,8 @@ if __name__ == '__main__':
                         help='Greedy CS density-drop tolerance; 0 keeps old behavior')
     parser.add_argument('--greedy_size_penalty', type=float, default=0.0,
                         help='Penalty for oversized greedy communities; 0 keeps old behavior')
+    parser.add_argument('--greedy_max_size', type=int, default=0,
+                        help='Hard cap on greedy community size; 0 disables the cap')
     parser.add_argument('--frontier_batch_size', type=int, default=1,
                         help='Greedy CS top-b frontier expansion size; 1 keeps old behavior')
     parser.add_argument('--greedy_connectivity_boost', type=float, default=0.0,
@@ -1214,6 +1216,7 @@ if __name__ == '__main__':
           f"greedy_patience={args.greedy_patience} "
           f"greedy_min_gain_tol={args.greedy_min_gain_tol} "
           f"greedy_size_penalty={args.greedy_size_penalty} "
+          f"greedy_max_size={args.greedy_max_size} "
           f"trace_early_stop_w={trace_early_stop_w} "
           f"frontier_batch_size={args.frontier_batch_size} "
           f"greedy_connectivity_boost={args.greedy_connectivity_boost} "
@@ -1885,6 +1888,7 @@ if __name__ == '__main__':
             greedy_patience=args.greedy_patience,
             greedy_min_gain_tol=args.greedy_min_gain_tol,
             greedy_size_penalty=args.greedy_size_penalty,
+            greedy_max_size=args.greedy_max_size,
             frontier_batch_size=args.frontier_batch_size,
             include_query_in_pred=args.include_query_in_pred,
             greedy_connectivity_boost=args.greedy_connectivity_boost,
@@ -1919,6 +1923,7 @@ if __name__ == '__main__':
                                             greedy_patience=args.greedy_patience,
                                             greedy_min_gain_tol=args.greedy_min_gain_tol,
                                             greedy_size_penalty=args.greedy_size_penalty,
+                                            greedy_max_size=args.greedy_max_size,
                                             frontier_batch_size=args.frontier_batch_size,
                                             include_query_in_pred=args.include_query_in_pred,
                                             greedy_connectivity_boost=args.greedy_connectivity_boost,
