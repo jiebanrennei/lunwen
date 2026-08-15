@@ -346,7 +346,7 @@ def _adaptive_greedy_max_size(q, sims_q, adj, greedy_max_size,
                                 max(1, strong_count + int(greedy_init_seed_size)))) )
     dynamic_cap = int(round(floor + alpha * support))
     dynamic_cap = max(floor, dynamic_cap, int(greedy_init_seed_size))
-    return min(base_cap, dynamic_cap)
+    return min(max(base_cap, dynamic_cap), max(base_cap, base_cap * 2))
 
 
 def _minmax_norm(values):

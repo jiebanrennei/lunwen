@@ -1114,7 +1114,7 @@ if __name__ == '__main__':
     parser.add_argument('--greedy_max_size', type=int, default=0,
                         help='Hard cap on greedy community size; 0 disables the cap')
     parser.add_argument('--greedy_adaptive_cap_alpha', type=float, default=0.0,
-                        help='Adaptive greedy cap scaling factor; 0 disables the adaptive cap')
+                        help='Recall-biased adaptive greedy cap scaling factor; 0 disables adaptation')
     parser.add_argument('--greedy_adaptive_cap_floor', type=int, default=0,
                         help='Minimum adaptive greedy cap before scaling')
     parser.add_argument('--frontier_batch_size', type=int, default=1,
