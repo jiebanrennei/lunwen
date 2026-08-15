@@ -73,8 +73,10 @@ Options:
   --greedy-boundary-gamma X   HSE-Greedy boundary expansion penalty weight
   --greedy-patience N         Stop after N non-improving greedy steps; 0=first drop
   --greedy-min-gain-tol X     Minimum greedy F1 gain tolerance
-  --greedy-max-size N         Hard cap on greedy community size; 0 disables the cap
-  --greedy-hse-pool-size N    Top-K frontier candidates scored by HSE; 0=full frontier
+  --greedy-adaptive-cap-alpha X
+                              Scale the per-query adaptive greedy cap; 0 disables adaptation
+  --greedy-adaptive-cap-floor N
+                              Minimum per-query greedy cap before scaling
   --greedy-hse-normalize      Normalize HSE structural terms inside candidate pool
   --greedy-hse-density        Use HSE-adjusted utility for greedy density selection
   --greedy-recall-expand-size N
@@ -405,6 +407,16 @@ while [[ $# -gt 0 ]]; do
       ;;
     --greedy-min-gain-tol|--greedy_min_gain_tol)
       add_train_arg "--greedy_min_gain_tol"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --greedy-adaptive-cap-alpha|--greedy_adaptive_cap_alpha)
+      add_train_arg "--greedy_adaptive_cap_alpha"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --greedy-adaptive-cap-floor|--greedy_adaptive_cap_floor)
+      add_train_arg "--greedy_adaptive_cap_floor"
       add_train_arg "$2"
       shift 2
       ;;

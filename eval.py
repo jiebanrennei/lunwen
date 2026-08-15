@@ -324,6 +324,31 @@ def _limit_hse_pool(cand_arr, scores, pool_size):
     return cand_arr[top_idx], scores[top_idx]
 
 
+def _adaptive_greedy_max_size(q, sims_q, adj, greedy_max_size,
+                              greedy_adaptive_cap_alpha=0.0,
+                              greedy_adaptive_cap_floor=0,
+                              greedy_init_seed_size=1):
+    base_cap = max(0, int(greedy_max_size))
+    if base_cap <= 0:
+        return 0
+    alpha = max(0.0, float(greedy_adaptive_cap_alpha))
+    floor = max(0, int(greedy_adaptive_cap_floor))
+    if alpha <= 0:
+        return base_cap
+    sims = np.asarray(sims_q, dtype=np.float64)
+    if sims.size == 0:
+        return max(1, min(base_cap, max(floor, int(greedy_init_seed_size))))
+    avg = float(sims.mean())
+    std = float(sims.std())
+    strong_count = int(np.count_nonzero(sims >= avg + std))
+    q_deg = len(adj[int(q)]) if adj is not None and 0 <= int(q) < len(adj) else 0
+    support = int(round(np.sqrt(max(1, q_deg + int(greedy_init_seed_size)) *
+                                max(1, strong_count + int(greedy_init_seed_size)))) )
+    dynamic_cap = int(round(floor + alpha * support))
+    dynamic_cap = max(floor, dynamic_cap, int(greedy_init_seed_size))
+    return min(base_cap, dynamic_cap)
+
+
 def _minmax_norm(values):
     values = values.astype(np.float64, copy=False)
     span = float(values.max() - values.min()) if values.size > 0 else 0.0
@@ -652,10 +677,15 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
             early_best_score = score
             early_bad_steps = 0
             return False
-        if early_stop_min_gain_tol > 0 and early_best_score - score <= early_stop_min_gain_tol:
+        gain_tol = float(early_stop_min_gain_tol)
+        patience = int(early_stop_patience)
+        if max_size > 0 and len(cum_sims) >= max(early_stop_min_size, int(0.75 * max_size)):
+            gain_tol = 0.0
+            patience = max(0, patience - 1)
+        if gain_tol > 0 and early_best_score - score <= gain_tol:
             return False
         early_bad_steps += 1
-        return early_bad_steps > early_stop_patience
+        return early_bad_steps > patience
 
     if init_seed_size > 1:
         seed_target = min(init_seed_size - 1, max_iter)
@@ -826,6 +856,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             node_boost=None, boost_factor=1.5, queries=None,
                             greedy_patience=0, greedy_min_gain_tol=0.0,
                             greedy_size_penalty=0.0, greedy_max_size=0,
+                            greedy_adaptive_cap_alpha=0.0,
+                            greedy_adaptive_cap_floor=0,
                             frontier_batch_size=1, include_query_in_pred=False,
                             greedy_connectivity_boost=0.0,
                             greedy_select_mode='first_drop',
@@ -879,7 +911,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
 
     # 初始化每个 w 的累加器
     accum = {w: {'P': [], 'R': [], 'F': [], 'J': [], 'sizes': [],
-                 'Den': [], 'Con': [], 'Dia': []} for w in w_list}
+                 'Den': [], 'Con': [], 'Dia': [], 'Cap': []} for w in w_list}
 
     for q in queries:
         truth = label_sets[y[q]].copy()
@@ -891,7 +923,11 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
         sims_q = sims[q]
         avg = float(sims_q.mean())
         density_avg = avg
-        max_size = max(0, int(greedy_max_size))
+        max_size = _adaptive_greedy_max_size(
+            q, sims_q, adj, greedy_max_size,
+            greedy_adaptive_cap_alpha=greedy_adaptive_cap_alpha,
+            greedy_adaptive_cap_floor=greedy_adaptive_cap_floor,
+            greedy_init_seed_size=greedy_init_seed_size)
         effective_min_size = greedy_init_seed_size if max_size <= 0 else min(greedy_init_seed_size, max_size)
         early_w = (trace_early_stop_w
                    if trace_early_stop_w is not None
@@ -963,7 +999,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
 
             a = accum[w]
             a['P'].append(p); a['R'].append(r); a['F'].append(f); a['J'].append(j)
-            a['sizes'].append(len(comm))
+            a['sizes'].append(len(comm)); a['Cap'].append(float(max_size))
 
             if compute_structure:
                 den, con, dia = _structure_metrics(comm, adj, total_vol)
@@ -978,6 +1014,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             'f1': float(np.mean(a['F'])) * 100 if a['F'] else 0.0,
             'jaccard': float(np.mean(a['J'])) * 100 if a['J'] else 0.0,
             'avg_size': float(np.mean(a['sizes'])) if a['sizes'] else 0.0,
+            'cap': float(np.mean(a['Cap'])) if a['Cap'] else 0.0,
             'density': float(np.mean(a['Den'])) if a['Den'] else 0.0,
             'conductance': float(np.mean(a['Con'])) if a['Con'] else 0.0,
             'diameter': float(np.mean(a['Dia'])) if a['Dia'] else 0.0,
@@ -987,12 +1024,13 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             extra = (f" den={results[w]['density']:.3f}"
                      f" cond={results[w]['conductance']:.3f}"
                      f" diam={results[w]['diameter']:.2f}")
+        cap_str = f" cap={results[w]['cap']:.1f}" if results[w]['cap'] > 0 else ""
         print(f'[CS-greedy] w={w:<4} '
               f"P={results[w]['precision']:.2f} "
               f"R={results[w]['recall']:.2f} "
               f"F1={results[w]['f1']:.2f} "
               f"Jaccard={results[w]['jaccard']:.2f} "
-              f"size={results[w]['avg_size']:.1f}{extra}")
+              f"size={results[w]['avg_size']:.1f}{cap_str}{extra}")
     return results
 
 
@@ -1234,6 +1272,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      intent_proj_fn=None, intent_rerank_alpha=0.0,
                                      greedy_patience=0, greedy_min_gain_tol=0.0,
                                      greedy_size_penalty=0.0, greedy_max_size=0,
+                                     greedy_adaptive_cap_alpha=0.0,
+                                     greedy_adaptive_cap_floor=0,
                                      frontier_batch_size=1, include_query_in_pred=False,
                                      greedy_connectivity_boost=0.0,
                                      greedy_select_mode='first_drop',
@@ -1276,7 +1316,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
     mult = _boost_multiplier(node_boost, boost_factor, N)
 
     accum = {w: {'P': [], 'R': [], 'F': [], 'J': [], 'sizes': [],
-                 'Den': [], 'Con': [], 'Dia': []} for w in w_list}
+                 'Den': [], 'Con': [], 'Dia': [], 'Cap': []} for w in w_list}
 
     for q in queries:
         truth = label_sets[y[q]].copy()
@@ -1302,7 +1342,11 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
 
         avg = float(sims_q.mean())
         density_avg = avg
-        max_size = max(0, int(greedy_max_size))
+        max_size = _adaptive_greedy_max_size(
+            q, sims_q, adj, greedy_max_size,
+            greedy_adaptive_cap_alpha=greedy_adaptive_cap_alpha,
+            greedy_adaptive_cap_floor=greedy_adaptive_cap_floor,
+            greedy_init_seed_size=greedy_init_seed_size)
         effective_min_size = greedy_init_seed_size if max_size <= 0 else min(greedy_init_seed_size, max_size)
         early_w = (trace_early_stop_w
                    if trace_early_stop_w is not None
@@ -1372,7 +1416,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
 
             a = accum[w]
             a['P'].append(p); a['R'].append(r); a['F'].append(f); a['J'].append(j)
-            a['sizes'].append(len(comm))
+            a['sizes'].append(len(comm)); a['Cap'].append(float(max_size))
             if compute_structure:
                 den, con, dia = _structure_metrics(comm, adj, total_vol)
                 a['Den'].append(den); a['Con'].append(con); a['Dia'].append(dia)
@@ -1386,6 +1430,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             'f1': float(np.mean(a['F'])) * 100 if a['F'] else 0.0,
             'jaccard': float(np.mean(a['J'])) * 100 if a['J'] else 0.0,
             'avg_size': float(np.mean(a['sizes'])) if a['sizes'] else 0.0,
+            'cap': float(np.mean(a['Cap'])) if a['Cap'] else 0.0,
             'density': float(np.mean(a['Den'])) if a['Den'] else 0.0,
             'conductance': float(np.mean(a['Con'])) if a['Con'] else 0.0,
             'diameter': float(np.mean(a['Dia'])) if a['Dia'] else 0.0,
@@ -1395,11 +1440,12 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             extra = (f" den={results[w]['density']:.3f}"
                      f" cond={results[w]['conductance']:.3f}"
                      f" diam={results[w]['diameter']:.2f}")
+        cap_str = f" cap={results[w]['cap']:.1f}" if results[w]['cap'] > 0 else ""
         print(f'[CS-greedy-dyn] w={w:<4} '
               f"P={results[w]['precision']:.2f} "
               f"R={results[w]['recall']:.2f} "
               f"F1={results[w]['f1']:.2f} "
               f"Jaccard={results[w]['jaccard']:.2f} "
-              f"size={results[w]['avg_size']:.1f}{extra}")
+              f"size={results[w]['avg_size']:.1f}{cap_str}{extra}")
     return results
 
