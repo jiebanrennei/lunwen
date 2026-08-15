@@ -77,6 +77,7 @@ Options:
                               Scale the per-query adaptive greedy cap; 0 disables adaptation
   --greedy-adaptive-cap-floor N
                               Minimum per-query greedy cap before scaling
+  --greedy-trace-cap-ratio X  Trace budget as a multiple of the final cap when multiple w values are evaluated
   --greedy-hse-normalize      Normalize HSE structural terms inside candidate pool
   --greedy-hse-density        Use HSE-adjusted utility for greedy density selection
   --greedy-recall-expand-size N
@@ -417,6 +418,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --greedy-adaptive-cap-floor|--greedy_adaptive_cap_floor)
       add_train_arg "--greedy_adaptive_cap_floor"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --greedy-trace-cap-ratio|--greedy_trace_cap_ratio)
+      add_train_arg "--greedy_trace_cap_ratio"
       add_train_arg "$2"
       shift 2
       ;;

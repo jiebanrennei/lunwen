@@ -1117,6 +1117,8 @@ if __name__ == '__main__':
                         help='Recall-biased adaptive greedy cap scaling factor; 0 disables adaptation')
     parser.add_argument('--greedy_adaptive_cap_floor', type=int, default=0,
                         help='Minimum adaptive greedy cap before scaling')
+    parser.add_argument('--greedy_trace_cap_ratio', type=float, default=1.5,
+                        help='Trace exploration budget as a multiple of the final greedy cap when multiple w values are evaluated')
     parser.add_argument('--frontier_batch_size', type=int, default=1,
                         help='Greedy CS top-b frontier expansion size; 1 keeps old behavior')
     parser.add_argument('--greedy_connectivity_boost', type=float, default=0.0,
@@ -1164,7 +1166,7 @@ if __name__ == '__main__':
     cs_w_list = parse_float_list_arg(args.cs_w_list)
     trace_early_stop_w = (
         float(np.median(cs_w_list))
-        if cs_w_list and str(args.greedy_select_mode).lower() == 'first_drop'
+        if cs_w_list and str(args.greedy_select_mode).lower() == 'first_drop' and len(cs_w_list) == 1
         else None
     )
     effective_num_cand_per_node = 0 if args.disable_candidate_edges else args.num_cand_per_node
@@ -1223,6 +1225,7 @@ if __name__ == '__main__':
           f"greedy_max_size={args.greedy_max_size} "
           f"greedy_adaptive_cap_alpha={args.greedy_adaptive_cap_alpha} "
           f"greedy_adaptive_cap_floor={args.greedy_adaptive_cap_floor} "
+          f"greedy_trace_cap_ratio={args.greedy_trace_cap_ratio} "
           f"trace_early_stop_w={trace_early_stop_w} "
           f"frontier_batch_size={args.frontier_batch_size} "
           f"greedy_connectivity_boost={args.greedy_connectivity_boost} "
@@ -1897,6 +1900,7 @@ if __name__ == '__main__':
             greedy_max_size=args.greedy_max_size,
             greedy_adaptive_cap_alpha=args.greedy_adaptive_cap_alpha,
             greedy_adaptive_cap_floor=args.greedy_adaptive_cap_floor,
+            greedy_trace_cap_ratio=args.greedy_trace_cap_ratio,
             frontier_batch_size=args.frontier_batch_size,
             include_query_in_pred=args.include_query_in_pred,
             greedy_connectivity_boost=args.greedy_connectivity_boost,
@@ -1934,6 +1938,7 @@ if __name__ == '__main__':
                                             greedy_max_size=args.greedy_max_size,
                                             greedy_adaptive_cap_alpha=args.greedy_adaptive_cap_alpha,
                                             greedy_adaptive_cap_floor=args.greedy_adaptive_cap_floor,
+                                            greedy_trace_cap_ratio=args.greedy_trace_cap_ratio,
                                             frontier_batch_size=args.frontier_batch_size,
                                             include_query_in_pred=args.include_query_in_pred,
                                             greedy_connectivity_boost=args.greedy_connectivity_boost,

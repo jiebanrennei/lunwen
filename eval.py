@@ -868,6 +868,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             greedy_size_penalty=0.0, greedy_max_size=0,
                             greedy_adaptive_cap_alpha=0.0,
                             greedy_adaptive_cap_floor=0,
+                            greedy_trace_cap_ratio=1.5,
                             frontier_batch_size=1, include_query_in_pred=False,
                             greedy_connectivity_boost=0.0,
                             greedy_select_mode='first_drop',
@@ -888,7 +889,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
     """
     贪心 + 密度自适应的社区搜索评估。
 
-    优化: 每个查询只做一次扩展, 多个 w 在同一条轨迹上各自找密度峰值(省 ×|w_list| 倍)。
+    优化: 默认情况下尽量复用 trace; 当 first_drop 且 w>1 时, 为每个 w 单独保留更长 trace,
+    再在同一 query 上各自找 prefix, 避免所有 w 被共享停止点锁死。
     compute_structure=False(默认)跳过 density/conductance/diameter, 大幅提速。
 
     Returns:
@@ -938,36 +940,72 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             greedy_adaptive_cap_alpha=greedy_adaptive_cap_alpha,
             greedy_adaptive_cap_floor=greedy_adaptive_cap_floor,
             greedy_init_seed_size=greedy_init_seed_size)
-        effective_min_size = greedy_init_seed_size if max_size <= 0 else min(greedy_init_seed_size, max_size)
-        early_w = (trace_early_stop_w
-                   if trace_early_stop_w is not None
-                   else (w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None))
+        trace_max_size = max_size
+        if max_size > 0 and str(greedy_select_mode).lower() == 'first_drop' and len(w_list) > 1:
+            trace_max_size = max(max_size, int(round(max_size * float(greedy_trace_cap_ratio))))
+        trace_max_size = max(0, int(trace_max_size))
+        effective_min_size = greedy_init_seed_size if trace_max_size <= 0 else min(greedy_init_seed_size, trace_max_size)
+        need_per_w_trace = str(greedy_select_mode).lower() == 'first_drop' and len(w_list) > 1
+        trace_early_w = None if need_per_w_trace else (
+            trace_early_stop_w
+            if trace_early_stop_w is not None
+            else (w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None)
+        )
 
-        # 只扩展一次
-        node_order, cum_sims = _greedy_expand_trace(
-            q, sims_q, adj, max_iter,
-            frontier_batch_size=frontier_batch_size,
-            connectivity_boost=greedy_connectivity_boost,
-            init_seed_size=greedy_init_seed_size,
-            init_seed_hops=greedy_init_seed_hops,
-            init_seed_conn_beta=greedy_init_seed_conn_beta,
-            init_seed_min_sim=greedy_init_seed_min_sim,
-            hse_high_order_beta=hse_high_order_beta,
-            hse_comm_cohesion_beta=hse_comm_cohesion_beta,
-            hse_boundary_gamma=hse_boundary_gamma,
-            hse_pool_size=hse_pool_size,
-            hse_comm_direct_beta=hse_comm_direct_beta,
-            hse_normalize=hse_normalize,
-            hse_density=hse_density,
-            early_stop_w=early_w,
-            early_stop_avg=density_avg,
-            early_stop_patience=greedy_patience,
-            early_stop_min_gain_tol=greedy_min_gain_tol,
-            early_stop_min_size=effective_min_size,
-            size_penalty=greedy_size_penalty,
-            max_size=max_size)
+        if need_per_w_trace:
+            trace_cache = {}
+            for w in w_list:
+                trace_cache[w] = _greedy_expand_trace(
+                    q, sims_q, adj, max_iter,
+                    frontier_batch_size=frontier_batch_size,
+                    connectivity_boost=greedy_connectivity_boost,
+                    init_seed_size=greedy_init_seed_size,
+                    init_seed_hops=greedy_init_seed_hops,
+                    init_seed_conn_beta=greedy_init_seed_conn_beta,
+                    init_seed_min_sim=greedy_init_seed_min_sim,
+                    hse_high_order_beta=hse_high_order_beta,
+                    hse_comm_cohesion_beta=hse_comm_cohesion_beta,
+                    hse_boundary_gamma=hse_boundary_gamma,
+                    hse_pool_size=hse_pool_size,
+                    hse_comm_direct_beta=hse_comm_direct_beta,
+                    hse_normalize=hse_normalize,
+                    hse_density=hse_density,
+                    early_stop_w=w,
+                    early_stop_avg=density_avg,
+                    early_stop_patience=greedy_patience,
+                    early_stop_min_gain_tol=greedy_min_gain_tol,
+                    early_stop_min_size=effective_min_size,
+                    size_penalty=greedy_size_penalty,
+                    max_size=trace_max_size)
+        else:
+            shared_trace = _greedy_expand_trace(
+                q, sims_q, adj, max_iter,
+                frontier_batch_size=frontier_batch_size,
+                connectivity_boost=greedy_connectivity_boost,
+                init_seed_size=greedy_init_seed_size,
+                init_seed_hops=greedy_init_seed_hops,
+                init_seed_conn_beta=greedy_init_seed_conn_beta,
+                init_seed_min_sim=greedy_init_seed_min_sim,
+                hse_high_order_beta=hse_high_order_beta,
+                hse_comm_cohesion_beta=hse_comm_cohesion_beta,
+                hse_boundary_gamma=hse_boundary_gamma,
+                hse_pool_size=hse_pool_size,
+                hse_comm_direct_beta=hse_comm_direct_beta,
+                hse_normalize=hse_normalize,
+                hse_density=hse_density,
+                early_stop_w=trace_early_w,
+                early_stop_avg=density_avg,
+                early_stop_patience=greedy_patience,
+                early_stop_min_gain_tol=greedy_min_gain_tol,
+                early_stop_min_size=effective_min_size,
+                size_penalty=greedy_size_penalty,
+                max_size=trace_max_size)
 
         for w in w_list:
+            if need_per_w_trace:
+                node_order, cum_sims = trace_cache[w]
+            else:
+                node_order, cum_sims = shared_trace
             comm = _best_community_for_w(
                 node_order, cum_sims, density_avg, w,
                 patience=greedy_patience,
@@ -975,7 +1013,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                 select_mode=greedy_select_mode,
                 min_size=effective_min_size,
                 size_penalty=greedy_size_penalty,
-                max_size=max_size)
+                max_size=trace_max_size)
             comm = _prune_community_edges(
                 q, comm, sims_q, adj, density_avg, w,
                 max_remove=5,
@@ -1284,6 +1322,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      greedy_size_penalty=0.0, greedy_max_size=0,
                                      greedy_adaptive_cap_alpha=0.0,
                                      greedy_adaptive_cap_floor=0,
+                                     greedy_trace_cap_ratio=1.5,
                                      frontier_batch_size=1, include_query_in_pred=False,
                                      greedy_connectivity_boost=0.0,
                                      greedy_select_mode='first_drop',
@@ -1357,34 +1396,72 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             greedy_adaptive_cap_alpha=greedy_adaptive_cap_alpha,
             greedy_adaptive_cap_floor=greedy_adaptive_cap_floor,
             greedy_init_seed_size=greedy_init_seed_size)
-        effective_min_size = greedy_init_seed_size if max_size <= 0 else min(greedy_init_seed_size, max_size)
-        early_w = (trace_early_stop_w
-                   if trace_early_stop_w is not None
-                   else (w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None))
-        node_order, cum_sims = _greedy_expand_trace(
-            q, sims_q, adj, max_iter,
-            frontier_batch_size=frontier_batch_size,
-            connectivity_boost=greedy_connectivity_boost,
-            init_seed_size=greedy_init_seed_size,
-            init_seed_hops=greedy_init_seed_hops,
-            init_seed_conn_beta=greedy_init_seed_conn_beta,
-            init_seed_min_sim=greedy_init_seed_min_sim,
-            hse_high_order_beta=hse_high_order_beta,
-            hse_comm_cohesion_beta=hse_comm_cohesion_beta,
-            hse_boundary_gamma=hse_boundary_gamma,
-            hse_pool_size=hse_pool_size,
-            hse_comm_direct_beta=hse_comm_direct_beta,
-            hse_normalize=hse_normalize,
-            hse_density=hse_density,
-            early_stop_w=early_w,
-            early_stop_avg=density_avg,
-            early_stop_patience=greedy_patience,
-            early_stop_min_gain_tol=greedy_min_gain_tol,
-            early_stop_min_size=effective_min_size,
-            size_penalty=greedy_size_penalty,
-            max_size=max_size)
+        trace_max_size = max_size
+        if max_size > 0 and str(greedy_select_mode).lower() == 'first_drop' and len(w_list) > 1:
+            trace_max_size = max(max_size, int(round(max_size * float(greedy_trace_cap_ratio))))
+        trace_max_size = max(0, int(trace_max_size))
+        effective_min_size = greedy_init_seed_size if trace_max_size <= 0 else min(greedy_init_seed_size, trace_max_size)
+        need_per_w_trace = str(greedy_select_mode).lower() == 'first_drop' and len(w_list) > 1
+        trace_early_w = None if need_per_w_trace else (
+            trace_early_stop_w
+            if trace_early_stop_w is not None
+            else (w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None)
+        )
+
+        if need_per_w_trace:
+            trace_cache = {}
+            for w in w_list:
+                trace_cache[w] = _greedy_expand_trace(
+                    q, sims_q, adj, max_iter,
+                    frontier_batch_size=frontier_batch_size,
+                    connectivity_boost=greedy_connectivity_boost,
+                    init_seed_size=greedy_init_seed_size,
+                    init_seed_hops=greedy_init_seed_hops,
+                    init_seed_conn_beta=greedy_init_seed_conn_beta,
+                    init_seed_min_sim=greedy_init_seed_min_sim,
+                    hse_high_order_beta=hse_high_order_beta,
+                    hse_comm_cohesion_beta=hse_comm_cohesion_beta,
+                    hse_boundary_gamma=hse_boundary_gamma,
+                    hse_pool_size=hse_pool_size,
+                    hse_comm_direct_beta=hse_comm_direct_beta,
+                    hse_normalize=hse_normalize,
+                    hse_density=hse_density,
+                    early_stop_w=w,
+                    early_stop_avg=density_avg,
+                    early_stop_patience=greedy_patience,
+                    early_stop_min_gain_tol=greedy_min_gain_tol,
+                    early_stop_min_size=effective_min_size,
+                    size_penalty=greedy_size_penalty,
+                    max_size=trace_max_size)
+        else:
+            shared_trace = _greedy_expand_trace(
+                q, sims_q, adj, max_iter,
+                frontier_batch_size=frontier_batch_size,
+                connectivity_boost=greedy_connectivity_boost,
+                init_seed_size=greedy_init_seed_size,
+                init_seed_hops=greedy_init_seed_hops,
+                init_seed_conn_beta=greedy_init_seed_conn_beta,
+                init_seed_min_sim=greedy_init_seed_min_sim,
+                hse_high_order_beta=hse_high_order_beta,
+                hse_comm_cohesion_beta=hse_comm_cohesion_beta,
+                hse_boundary_gamma=hse_boundary_gamma,
+                hse_pool_size=hse_pool_size,
+                hse_comm_direct_beta=hse_comm_direct_beta,
+                hse_normalize=hse_normalize,
+                hse_density=hse_density,
+                early_stop_w=trace_early_w,
+                early_stop_avg=density_avg,
+                early_stop_patience=greedy_patience,
+                early_stop_min_gain_tol=greedy_min_gain_tol,
+                early_stop_min_size=effective_min_size,
+                size_penalty=greedy_size_penalty,
+                max_size=trace_max_size)
 
         for w in w_list:
+            if need_per_w_trace:
+                node_order, cum_sims = trace_cache[w]
+            else:
+                node_order, cum_sims = shared_trace
             comm = _best_community_for_w(
                 node_order, cum_sims, density_avg, w,
                 patience=greedy_patience,
@@ -1392,7 +1469,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                 select_mode=greedy_select_mode,
                 min_size=effective_min_size,
                 size_penalty=greedy_size_penalty,
-                max_size=max_size)
+                max_size=trace_max_size)
             comm = _prune_community_edges(
                 q, comm, sims_q, adj, density_avg, w,
                 max_remove=5,
