@@ -438,6 +438,14 @@ def _recall_expand_community(q, comm, sims_q, adj, max_add=0, pool_size=0,
         comm_direct_beta, normalize=hse_normalize)
     if hse_scores is not None:
         scores = scores + hse_scores
+    score_floor = float(min_sim) if min_sim is not None else float('-inf')
+    if scores.size > 0:
+        score_floor = max(score_floor, float(scores.mean() + 0.25 * scores.std()))
+        keep = scores >= score_floor
+        cand_arr = cand_arr[keep]
+        scores = scores[keep]
+        if cand_arr.size == 0:
+            return comm
     remaining = max_add if max_size <= 0 else max(0, max_size - len(comm))
     take = min(max_add, remaining, cand_arr.size)
     if take <= 0:

@@ -1163,7 +1163,7 @@ if __name__ == '__main__':
     cs_topk = parse_topk_arg(args.cs_topk)
     cs_w_list = parse_float_list_arg(args.cs_w_list)
     trace_early_stop_w = (
-        min(cs_w_list)
+        float(np.median(cs_w_list))
         if cs_w_list and str(args.greedy_select_mode).lower() == 'first_drop'
         else None
     )
