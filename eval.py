@@ -340,13 +340,15 @@ def _adaptive_greedy_max_size(q, sims_q, adj, greedy_max_size,
         return max(1, min(base_cap, max(floor, int(greedy_init_seed_size))))
     avg = float(sims.mean())
     std = float(sims.std())
-    strong_count = int(np.count_nonzero(sims >= avg + std))
+    if std <= 1e-12:
+        support_hits = int(np.count_nonzero(sims >= avg))
+    else:
+        support_hits = int(np.count_nonzero(sims >= avg + 0.5 * std))
     q_deg = len(adj[int(q)]) if adj is not None and 0 <= int(q) < len(adj) else 0
-    support = int(round(np.sqrt(max(1, q_deg + int(greedy_init_seed_size)) *
-                                max(1, strong_count + int(greedy_init_seed_size)))) )
+    support = support_hits + int(np.ceil(np.log1p(max(1, q_deg))))
     dynamic_cap = int(round(floor + alpha * support))
     dynamic_cap = max(floor, dynamic_cap, int(greedy_init_seed_size))
-    return min(max(base_cap, dynamic_cap), max(base_cap, base_cap * 2))
+    return min(base_cap, dynamic_cap)
 
 
 def _minmax_norm(values):
