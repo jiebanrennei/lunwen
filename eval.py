@@ -953,8 +953,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
         trace_early_w = (
             trace_early_stop_w
             if trace_early_stop_w is not None
-            else (float(np.median(w_list)) if w_list and str(greedy_select_mode).lower() == 'first_drop' and len(w_list) > 1
-                  else (w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None))
+            else (float(np.min(w_list)) if w_list and str(greedy_select_mode).lower() == 'first_drop'
+                  else None)
         )
 
         shared_trace = _greedy_expand_trace(
@@ -1382,8 +1382,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
         trace_early_w = (
             trace_early_stop_w
             if trace_early_stop_w is not None
-            else (float(np.median(w_list)) if w_list and str(greedy_select_mode).lower() == 'first_drop' and len(w_list) > 1
-                  else (w_list[0] if len(w_list) == 1 and str(greedy_select_mode).lower() == 'first_drop' else None))
+            else (float(np.min(w_list)) if w_list and str(greedy_select_mode).lower() == 'first_drop'
+                  else None)
         )
 
         shared_trace = _greedy_expand_trace(

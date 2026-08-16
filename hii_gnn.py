@@ -13,38 +13,22 @@ GCN 基线忽略 intent, 两者可经 --encoder 开关互换。
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import MessagePassing
-from torch_geometric.utils import softmax
+from torch_geometric.nn import GCNConv
 
 
-class LocalIntentInjectionLayer(MessagePassing):
-    """Layer1: 意图门控调制源节点特征后做多头注意力消息传递。
-
-    旧版把意图向量直接拼接进 attention score, 但意图对所有边是常量,
-    在 per-target softmax 中被完全抵消——等于没注入。
-
-    修正: 意图先通过 sigmoid 门控调制源节点特征维度 (乘性交互),
-    使不同源节点在意图视角下呈现不同的 "重要性剖面", 从而真正
-    影响注意力分布。同时增加残差投影 + LayerNorm 稳定训练。
-    """
+class LocalIntentInjectionLayer(nn.Module):
+    """Layer1: 意图门控调制源节点特征后做轻量稀疏传播。"""
 
     def __init__(self, in_channels, out_channels, heads=4, drop_p=0.0):
-        super().__init__(aggr='add', node_dim=0)
-        assert out_channels % heads == 0
+        super().__init__()
         self.heads = heads
         self.out_channels = out_channels
-        self.head_dim = out_channels // heads
-
         self.lin = nn.Linear(in_channels, out_channels)
-        # 意图门控: sigmoid(W·intent) ⊙ h_src → 不同源节点被不同程度放大
         self.intent_gate = nn.Sequential(
             nn.Linear(out_channels, out_channels), nn.Sigmoid()
         )
-        # 2-part attention: [gated_src || dst]
-        self.att = nn.Parameter(torch.empty(1, heads, 2 * self.head_dim))
-        self.leaky = nn.LeakyReLU(0.2)
+        self.conv = GCNConv(out_channels, out_channels, add_self_loops=False, normalize=False)
         self.dropout = nn.Dropout(drop_p)
-        # 残差投影 + LayerNorm
         self.residual_proj = (nn.Linear(in_channels, out_channels)
                               if in_channels != out_channels else nn.Identity())
         self.norm = nn.LayerNorm(out_channels)
@@ -53,38 +37,28 @@ class LocalIntentInjectionLayer(MessagePassing):
     def _reset(self):
         nn.init.xavier_uniform_(self.lin.weight)
         nn.init.zeros_(self.lin.bias)
-        nn.init.xavier_uniform_(self.att)
+        if isinstance(self.intent_gate[0], nn.Linear):
+            nn.init.xavier_uniform_(self.intent_gate[0].weight)
+            nn.init.zeros_(self.intent_gate[0].bias)
+        self.conv.reset_parameters()
         if isinstance(self.residual_proj, nn.Linear):
             nn.init.xavier_uniform_(self.residual_proj.weight)
             nn.init.zeros_(self.residual_proj.bias)
 
     def forward(self, x, edge_index, edge_weight, intent_h):
-        h = self.lin(x).view(-1, self.heads, self.head_dim)
-        gate = self.intent_gate(intent_h).view(self.heads, self.head_dim)
-        num_nodes = x.size(0)
-        out = self.propagate(edge_index, x=h, gate=gate,
-                             edge_weight=edge_weight, size=(num_nodes, num_nodes))
-        out = out.view(-1, self.out_channels)
+        h = self.lin(x)
+        gate = self.intent_gate(intent_h).unsqueeze(0)
+        h = self.dropout(h * gate)
+        out = self.conv(h, edge_index, edge_weight)
         return self.norm(out + self.residual_proj(x))
 
-    def message(self, x_i, x_j, gate, index, edge_weight, size_i):
-        E = x_j.size(0)
-        gate_exp = gate.unsqueeze(0).expand(E, -1, -1)
-        x_j_gated = x_j * gate_exp
-        cat = torch.cat([x_j_gated, x_i], dim=-1)                 # [E,heads,2*hd]
-        alpha = self.leaky((cat * self.att).sum(dim=-1))           # [E,heads]
-        alpha = softmax(alpha, index, num_nodes=size_i)
-        if edge_weight is not None:
-            alpha = alpha * edge_weight.view(-1, 1)
-        alpha = self.dropout(alpha)
-        return x_j_gated * alpha.unsqueeze(-1)
 
-
-class NeighborIntentAggregationLayer(MessagePassing):
+class NeighborIntentAggregationLayer(nn.Module):
     """Layer2: 意图门控选择性聚合邻居 + 残差 + LayerNorm。"""
 
     def __init__(self, channels, intent_dim_h, drop_p=0.0):
-        super().__init__(aggr='add', node_dim=0)
+        super().__init__()
+        self.conv = GCNConv(channels, channels, add_self_loops=False, normalize=False)
         self.msg_mlp = nn.Sequential(
             nn.Linear(channels, channels), nn.ReLU(), nn.Dropout(drop_p)
         )
@@ -94,16 +68,12 @@ class NeighborIntentAggregationLayer(MessagePassing):
         self.norm = nn.LayerNorm(channels)
 
     def forward(self, x, edge_index, edge_weight, intent_h):
-        agg = self.propagate(edge_index, x=x, edge_weight=edge_weight)
+        agg = self.conv(x, edge_index, edge_weight)
         agg = self.msg_mlp(agg)
         intent_exp = intent_h.unsqueeze(0).expand(x.size(0), -1)
         gate = self.gate(torch.cat([x, intent_exp], dim=-1))
         return self.norm(x + agg * gate)
 
-    def message(self, x_j, edge_weight):
-        if edge_weight is not None:
-            return edge_weight.view(-1, 1) * x_j
-        return x_j
 
 
 class GlobalIntentFusionLayer(nn.Module):

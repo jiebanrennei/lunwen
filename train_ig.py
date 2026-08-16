@@ -1805,6 +1805,10 @@ if __name__ == '__main__':
 
     # ========== 评估 (节点分类台架) ==========
     # 节点分类用 "平均意图" 编码一次 (非查询驱动任务)
+    contrastive_model.eval()
+    suspicious_identifier.eval()
+    if intent_generator is not None:
+        intent_generator.eval()
     with torch.no_grad():
         if intent_generator is not None:
             avg_intent = intent_generator(data.x.mean(dim=0))
