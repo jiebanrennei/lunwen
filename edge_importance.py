@@ -13,7 +13,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.utils import degree, to_dense_adj
+from torch_geometric.utils import degree
 
 
 def compute_temporal_anomaly(node_time, num_nodes, device=None):
@@ -85,9 +85,25 @@ class AdversarialCommunityAwareEdgeImportance(nn.Module):
                 and self._cn_norm.device == edge_index.device):
             return self._cn_norm
         with torch.no_grad():
-            adj = to_dense_adj(edge_index, max_num_nodes=num_nodes)[0]
-            cn = (adj @ adj)[src, dst]                     # 每条边的共同邻居数
-            cn_norm = cn / (cn.max() + 1e-8)
+            edge_cpu = edge_index.detach().cpu()
+            src_cpu = edge_cpu[0].tolist()
+            dst_cpu = edge_cpu[1].tolist()
+            neighbors = [set() for _ in range(num_nodes)]
+            for u, v in zip(src_cpu, dst_cpu):
+                if u != v:
+                    neighbors[u].add(v)
+            counts = torch.zeros(edge_cpu.size(1), dtype=torch.float32)
+            for idx, (u, v) in enumerate(zip(src_cpu, dst_cpu)):
+                if u == v:
+                    continue
+                nu = neighbors[u]
+                nv = neighbors[v]
+                if len(nu) > len(nv):
+                    nu, nv = nv, nu
+                if nu:
+                    counts[idx] = sum((nbr in nv) for nbr in nu)
+            cn_norm = counts / (counts.max() + 1e-8) if counts.numel() > 0 else counts
+            cn_norm = cn_norm.to(edge_index.device)
         self._cn_norm = cn_norm
         self._cn_sig = sig
         return cn_norm

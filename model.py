@@ -6,6 +6,7 @@ import torch
 from torch.nn import Linear, BatchNorm1d, ReLU
 from torch_geometric.nn import MessagePassing
 from torch_geometric.utils import add_self_loops
+from torch.utils.checkpoint import checkpoint
 
 
 class GINConvWithEdgeWeight(MessagePassing):
@@ -97,9 +98,20 @@ class Encoder(torch.nn.Module):
     def forward(self, x, edge_index, edge_weight, intent=None):
         # intent 形参仅为与 HII-GNN 接口对齐, vanilla GCN 忽略它
         for i in range(self.num_layers):
-            x = self.conv[i](x, edge_index, edge_weight)
-            x = self.dropout(x)
-            x = self.activation(x)
+            conv = self.conv[i]
+
+            def _layer_forward(inp, ew, conv=conv):
+                out = conv(inp, edge_index, ew)
+                out = self.dropout(out)
+                return self.activation(out)
+
+            if self.training and x.requires_grad:
+                if edge_weight is None:
+                    x = checkpoint(lambda inp: _layer_forward(inp, None), x)
+                else:
+                    x = checkpoint(_layer_forward, x, edge_weight)
+            else:
+                x = _layer_forward(x, edge_weight)
         return x
 
 
@@ -122,14 +134,26 @@ class TrainModel(torch.nn.Module):
         z2 = F.normalize(z2)
         return torch.mm(z1, z2.t())
 
-    def semi_loss(self, z1: torch.Tensor, z2: torch.Tensor):
-        f = lambda x: torch.exp(x / self.tau)
-        refl_sim = f(self.sim(z1, z1))
-        between_sim = f(self.sim(z1, z2))
+    def _chunked_semi_loss(self, z1: torch.Tensor, z2: torch.Tensor):
+        z1 = F.normalize(z1)
+        z2 = F.normalize(z2)
+        num_nodes = z1.size(0)
+        chunk_size = min(512, max(1, num_nodes))
+        losses = []
+        for start in range(0, num_nodes, chunk_size):
+            end = min(start + chunk_size, num_nodes)
+            z1_chunk = z1[start:end]
+            refl_sim = torch.exp(torch.mm(z1_chunk, z1.t()) / self.tau)
+            between_sim = torch.exp(torch.mm(z1_chunk, z2.t()) / self.tau)
+            pos_sim = torch.exp((z1_chunk * z2[start:end]).sum(dim=1) / self.tau)
+            refl_diag = torch.exp((z1_chunk * z1[start:end]).sum(dim=1) / self.tau)
+            losses.append(-torch.log(
+                pos_sim / (refl_sim.sum(1) + between_sim.sum(1) - refl_diag)
+            ))
+        return torch.cat(losses, dim=0)
 
-        return -torch.log(
-            between_sim.diag()
-            / (refl_sim.sum(1) + between_sim.sum(1) - refl_sim.diag()))
+    def semi_loss(self, z1: torch.Tensor, z2: torch.Tensor):
+        return self._chunked_semi_loss(z1, z2)
 
     def loss(self, z1: torch.Tensor, z2: torch.Tensor,
              mean: bool = True):

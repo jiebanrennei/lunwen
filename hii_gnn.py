@@ -14,6 +14,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
+from torch.utils.checkpoint import checkpoint
 
 
 class LocalIntentInjectionLayer(nn.Module):
@@ -129,13 +130,36 @@ class HierarchicalIntentInjectedGNN(nn.Module):
     def forward(self, x, edge_index, edge_weight, intent):
         intent_h = self.intent_adapter(intent)            # [out_channels]
 
-        h = self.local(x, edge_index, edge_weight, intent_h)
-        h = self.activation(h)
+        def _local_forward(inp, edge_weight=edge_weight, edge_index=edge_index, intent_h=intent_h):
+            return self.activation(self.local(inp, edge_index, edge_weight, intent_h))
+
+        if self.training and x.requires_grad:
+            if edge_weight is None:
+                h = checkpoint(lambda inp: _local_forward(inp, None), x)
+            else:
+                h = checkpoint(_local_forward, x, edge_weight)
+        else:
+            h = _local_forward(x)
 
         for layer in self.neighbor_layers:
-            h = layer(h, edge_index, edge_weight, intent_h)
-            h = self.activation(h)
+            def _neighbor_forward(inp, ew, layer=layer, edge_index=edge_index,
+                                  intent_h=intent_h):
+                return self.activation(layer(inp, edge_index, ew, intent_h))
+
+            if self.training and h.requires_grad:
+                if edge_weight is None:
+                    h = checkpoint(lambda inp: _neighbor_forward(inp, None), h)
+                else:
+                    h = checkpoint(_neighbor_forward, h, edge_weight)
+            else:
+                h = _neighbor_forward(h, edge_weight)
 
         if self.use_global:
-            h = self.global_fusion(h, intent_h)
+            def _global_forward(inp, intent_h=intent_h):
+                return self.global_fusion(inp, intent_h)
+
+            if self.training and h.requires_grad:
+                h = checkpoint(_global_forward, h)
+            else:
+                h = _global_forward(h)
         return h

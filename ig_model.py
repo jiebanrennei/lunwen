@@ -157,7 +157,7 @@ class IntentGuidedAdversarialModel(nn.Module):
         msrc = torch.cat([upper_edges[0], upper_edges[1]])
         mdst = torch.cat([upper_edges[1], upper_edges[0]])
 
-        chunk = min(num_nodes, 2048)
+        chunk = min(num_nodes, 512 if num_nodes >= 2048 else 2048)
         src_list, dst_list, score_list = [], [], []
         for c0 in range(0, num_nodes, chunk):
             c1 = min(c0 + chunk, num_nodes)
@@ -503,20 +503,35 @@ class IntentContrastiveModel(nn.Module):
         z2 = F.normalize(z2)
         return torch.mm(z1, z2.t())
 
+    def _chunked_semi_loss(self, z1, z2, already_normalized=False):
+        if not already_normalized:
+            z1 = F.normalize(z1)
+            z2 = F.normalize(z2)
+        num_nodes = z1.size(0)
+        chunk_size = min(512, max(1, num_nodes))
+        losses = []
+        for start in range(0, num_nodes, chunk_size):
+            end = min(start + chunk_size, num_nodes)
+            z1_chunk = z1[start:end]
+            refl_sim = torch.exp(torch.mm(z1_chunk, z1.t()) / self.tau)
+            between_sim = torch.exp(torch.mm(z1_chunk, z2.t()) / self.tau)
+            pos_sim = torch.exp((z1_chunk * z2[start:end]).sum(dim=1) / self.tau)
+            refl_diag = torch.exp((z1_chunk * z1[start:end]).sum(dim=1) / self.tau)
+            losses.append(-torch.log(
+                pos_sim / (refl_sim.sum(1) + between_sim.sum(1) - refl_diag)
+            ))
+        return torch.cat(losses, dim=0)
+
     def semi_loss(self, z1, z2):
-        f = lambda x: torch.exp(x / self.tau)
-        refl_sim = f(self.sim(z1, z1))
-        between_sim = f(self.sim(z1, z2))
-        return -torch.log(
-            between_sim.diag()
-            / (refl_sim.sum(1) + between_sim.sum(1) - refl_sim.diag())
-        )
+        return self._chunked_semi_loss(z1, z2)
 
     def contrastive_loss(self, z1, z2):
         h1 = self.projection(z1)
         h2 = self.projection(z2)
-        l1 = self.semi_loss(h1, h2)
-        l2 = self.semi_loss(h2, h1)
+        h1 = F.normalize(h1)
+        h2 = F.normalize(h2)
+        l1 = self._chunked_semi_loss(h1, h2, already_normalized=True)
+        l2 = self._chunked_semi_loss(h2, h1, already_normalized=True)
         return (l1 + l2).mean() * 0.5
 
     def _intent_infonce(self, z_proj_norm, intent_pos):

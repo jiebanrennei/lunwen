@@ -1468,23 +1468,32 @@ if __name__ == '__main__':
         """单关系模式: 原有逻辑——合并图上一次扰动。返回 (z_adv, z_rec, reg, fea_up, fea_lo, edge_info)。"""
         info = adv_m(data.x, data.edge_index, ones, intent)
         aw, rw, rg, cw = generate_ar_edge_weight(info, args.adv_temp, args.bias)
-        za = cont_m(data.x, data.edge_index,
-                    torch.cat([aw, aw], dim=0), intent)
+        aw2 = torch.cat([aw, aw], dim=0)
+        rw2 = torch.cat([rw, rw], dim=0)
+        za = cont_m(data.x, data.edge_index, aw2, intent)
         ce = info['cand_edges']
         if cw.numel() > 0:
             cb = torch.cat([ce, ce.flip(0)], dim=1)
             cwb = torch.cat([cw, cw], dim=0)
             rei = torch.cat([data.edge_index, cb], dim=1)
-            rew = torch.cat([torch.cat([rw, rw], dim=0), cwb], dim=0)
+            rew = torch.cat([rw2, cwb], dim=0)
         else:
             rei = data.edge_index
-            rew = torch.cat([rw, rw], dim=0)
+            rew = rw2
         zr = cont_m(data.x, rei, rew, intent)
+        if effective_lambda_cand_bce > 0:
+            cand_logits = info['cand_edge_logits']
+            cand_targets = info['cand_edge_targets']
+            num_cand = info['cand_edges'].size(1)
+        else:
+            cand_logits = None
+            cand_targets = None
+            num_cand = 0
         edge_aux = {
             'alpha': None,
-            'cand_logits': info['cand_edge_logits'],
-            'cand_targets': info['cand_edge_targets'],
-            'num_cand': info['cand_edges'].size(1),
+            'cand_logits': cand_logits,
+            'cand_targets': cand_targets,
+            'num_cand': num_cand,
         }
         return za, zr, rg, info['upper_edge_fea'], info['lower_edge_fea'], edge_aux
 
@@ -1499,29 +1508,38 @@ if __name__ == '__main__':
             aw, rw, rg, cw = generate_ar_edge_weight(info, args.adv_temp, args.bias)
             adv_ws.append(torch.cat([aw, aw], dim=0))
             ei_r = data.edge_index_list[r]
+            rw2 = torch.cat([rw, rw], dim=0)
             ce = info['cand_edges']
             if cw.numel() > 0:
                 cb = torch.cat([ce, ce.flip(0)], dim=1)
                 cwb = torch.cat([cw, cw], dim=0)
                 rec_ei_list.append(torch.cat([ei_r, cb], dim=1))
-                rec_ew_list.append(torch.cat([torch.cat([rw, rw]), cwb]))
+                rec_ew_list.append(torch.cat([rw2, cwb], dim=0))
             else:
                 rec_ei_list.append(ei_r)
-                rec_ew_list.append(torch.cat([rw, rw]))
+                rec_ew_list.append(rw2)
             regs.append(rg)
             fea_ups.append(info['upper_edge_fea'])
             fea_los.append(info['lower_edge_fea'])
-            cand_logits.append(info['cand_edge_logits'])
-            cand_targets.append(info['cand_edge_targets'])
-            num_cand += info['cand_edges'].size(1)
+            if effective_lambda_cand_bce > 0:
+                cand_logits.append(info['cand_edge_logits'])
+                cand_targets.append(info['cand_edge_targets'])
+                num_cand += info['cand_edges'].size(1)
         za = cont_m(data.x, data.edge_index_list, adv_ws, intent)
         _, zr, alpha = cont_m.encoder.encode_per_relation(
             data.x, rec_ei_list, rec_ew_list, intent)
         reg_mean = torch.stack(regs).mean()
+        if effective_lambda_cand_bce > 0:
+            cand_logits = torch.cat(cand_logits, 0)
+            cand_targets = torch.cat(cand_targets, 0)
+        else:
+            cand_logits = None
+            cand_targets = None
+            num_cand = 0
         edge_aux = {
             'alpha': alpha,
-            'cand_logits': torch.cat(cand_logits, 0),
-            'cand_targets': torch.cat(cand_targets, 0),
+            'cand_logits': cand_logits,
+            'cand_targets': cand_targets,
             'num_cand': num_cand,
         }
         return (za, zr, reg_mean, torch.cat(fea_ups, 0),
