@@ -623,6 +623,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                          early_stop_min_gain_tol=0.0,
                          early_stop_min_size=1,
                          size_penalty=0.0,
+                         balance_alpha=0.0,
                          max_size=0):
     """
     单次贪心扩展: 从 frontier 中按相似度/结构连接度选择节点, 记录累计 sim 和。
@@ -641,6 +642,7 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     hse_comm_direct_beta = max(0.0, float(hse_comm_direct_beta))
     hse_normalize = bool(hse_normalize)
     hse_density = bool(hse_density)
+    balance_alpha = max(0.0, float(balance_alpha))
     size_penalty = max(0.0, float(size_penalty))
     max_size = max(0, int(max_size))
     use_hse = (hse_high_order_beta > 0 or hse_comm_cohesion_beta > 0
@@ -682,7 +684,8 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
             return False
         size = float(len(cum_sims))
         density = (cum_sims[-1] - size * float(early_stop_avg)) / (size ** float(early_stop_w))
-        score = density - size_penalty * size
+        support = float(cum_sims[-1]) / size
+        score = density + balance_alpha * support - size_penalty * size
         if early_best_score is None or score > early_best_score:
             early_best_score = score
             early_bad_steps = 0
@@ -823,11 +826,13 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
 def _best_community_for_w(node_order, cum_sims, avg, w,
                           patience=0, min_gain_tol=0.0,
                           select_mode='first_drop', min_size=1,
-                          size_penalty=0.0, max_size=0):
+                          size_penalty=0.0, balance_alpha=0.0,
+                          max_size=0):
     """在一条扩展轨迹上, 对给定 w 找密度峰值, 返回对应社区 set。"""
     sizes = np.arange(1, len(cum_sims) + 1, dtype=np.float64)
     densities = (cum_sims - sizes * avg) / (sizes ** w)
-    scores = densities - size_penalty * sizes
+    support = cum_sims / sizes
+    scores = densities + max(0.0, float(balance_alpha)) * support - size_penalty * sizes
     usable_len = len(scores)
     if max_size and max_size > 0:
         usable_len = min(usable_len, max(1, int(max_size)))
@@ -865,7 +870,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             compute_structure=False,
                             node_boost=None, boost_factor=1.5, queries=None,
                             greedy_patience=0, greedy_min_gain_tol=0.0,
-                            greedy_size_penalty=0.0, greedy_max_size=0,
+                            greedy_size_penalty=0.0, balance_alpha=0.15, greedy_max_size=0,
                             greedy_adaptive_cap_alpha=0.0,
                             greedy_adaptive_cap_floor=0,
                             greedy_trace_cap_ratio=1.5,
@@ -973,6 +978,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             early_stop_min_gain_tol=greedy_min_gain_tol,
             early_stop_min_size=effective_min_size,
             size_penalty=greedy_size_penalty,
+            balance_alpha=balance_alpha,
             max_size=trace_max_size)
 
         for w in w_list:
@@ -984,6 +990,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                 select_mode=greedy_select_mode,
                 min_size=effective_min_size,
                 size_penalty=greedy_size_penalty,
+                balance_alpha=balance_alpha,
                 max_size=max_size)
             comm = _prune_community_edges(
                 q, comm, sims_q, adj, density_avg, w,
@@ -1290,7 +1297,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      edge_index=None,
                                      intent_proj_fn=None, intent_rerank_alpha=0.0,
                                      greedy_patience=0, greedy_min_gain_tol=0.0,
-                                     greedy_size_penalty=0.0, greedy_max_size=0,
+                                     greedy_size_penalty=0.0, balance_alpha=0.15, greedy_max_size=0,
                                      greedy_adaptive_cap_alpha=0.0,
                                      greedy_adaptive_cap_floor=0,
                                      greedy_trace_cap_ratio=1.5,
@@ -1400,6 +1407,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             early_stop_min_gain_tol=greedy_min_gain_tol,
             early_stop_min_size=effective_min_size,
             size_penalty=greedy_size_penalty,
+            balance_alpha=balance_alpha,
             max_size=trace_max_size)
 
         for w in w_list:
@@ -1411,6 +1419,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                 select_mode=greedy_select_mode,
                 min_size=effective_min_size,
                 size_penalty=greedy_size_penalty,
+                balance_alpha=balance_alpha,
                 max_size=max_size)
             comm = _prune_community_edges(
                 q, comm, sims_q, adj, density_avg, w,

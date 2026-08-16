@@ -1111,6 +1111,8 @@ if __name__ == '__main__':
                         help='Greedy CS density-drop tolerance; 0 keeps old behavior')
     parser.add_argument('--greedy_size_penalty', type=float, default=0.0,
                         help='Penalty for oversized greedy communities; 0 keeps old behavior')
+    parser.add_argument('--greedy_balance_alpha', type=float, default=0.15,
+                        help='Mean-similarity support bonus for greedy trace stop and prefix selection')
     parser.add_argument('--greedy_max_size', type=int, default=0,
                         help='Hard cap on greedy community size; 0 disables the cap')
     parser.add_argument('--greedy_adaptive_cap_alpha', type=float, default=0.0,
@@ -1222,6 +1224,7 @@ if __name__ == '__main__':
           f"greedy_patience={args.greedy_patience} "
           f"greedy_min_gain_tol={args.greedy_min_gain_tol} "
           f"greedy_size_penalty={args.greedy_size_penalty} "
+          f"greedy_balance_alpha={args.greedy_balance_alpha} "
           f"greedy_max_size={args.greedy_max_size} "
           f"greedy_adaptive_cap_alpha={args.greedy_adaptive_cap_alpha} "
           f"greedy_adaptive_cap_floor={args.greedy_adaptive_cap_floor} "
@@ -1897,6 +1900,7 @@ if __name__ == '__main__':
             greedy_patience=args.greedy_patience,
             greedy_min_gain_tol=args.greedy_min_gain_tol,
             greedy_size_penalty=args.greedy_size_penalty,
+            balance_alpha=args.greedy_balance_alpha,
             greedy_max_size=args.greedy_max_size,
             greedy_adaptive_cap_alpha=args.greedy_adaptive_cap_alpha,
             greedy_adaptive_cap_floor=args.greedy_adaptive_cap_floor,
@@ -1935,6 +1939,7 @@ if __name__ == '__main__':
                                             greedy_patience=args.greedy_patience,
                                             greedy_min_gain_tol=args.greedy_min_gain_tol,
                                             greedy_size_penalty=args.greedy_size_penalty,
+                                            balance_alpha=args.greedy_balance_alpha,
                                             greedy_max_size=args.greedy_max_size,
                                             greedy_adaptive_cap_alpha=args.greedy_adaptive_cap_alpha,
                                             greedy_adaptive_cap_floor=args.greedy_adaptive_cap_floor,

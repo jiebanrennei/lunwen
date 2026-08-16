@@ -73,6 +73,7 @@ Options:
   --greedy-boundary-gamma X   HSE-Greedy boundary expansion penalty weight
   --greedy-patience N         Stop after N non-improving greedy steps; 0=first drop
   --greedy-min-gain-tol X     Minimum greedy F1 gain tolerance
+  --greedy-balance-alpha X    Mean-similarity support bonus for greedy trace stop and prefix selection
   --greedy-adaptive-cap-alpha X
                               Scale the per-query adaptive greedy cap; 0 disables adaptation
   --greedy-adaptive-cap-floor N
@@ -408,6 +409,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --greedy-min-gain-tol|--greedy_min_gain_tol)
       add_train_arg "--greedy_min_gain_tol"
+      add_train_arg "$2"
+      shift 2
+      ;;
+    --greedy-balance-alpha|--greedy_balance_alpha)
+      add_train_arg "--greedy_balance_alpha"
       add_train_arg "$2"
       shift 2
       ;;
