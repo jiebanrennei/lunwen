@@ -177,6 +177,17 @@ def _boost_multiplier(node_boost, boost_factor, N):
     return 1.0 + (boost_factor - 1.0) * nb
 
 
+def _prepare_node_prior(node_prior, N):
+    if node_prior is None:
+        return None
+    prior = node_prior.detach().cpu().numpy() if hasattr(node_prior, 'detach') \
+        else np.asarray(node_prior)
+    prior = prior.astype(np.float64).reshape(-1)
+    if prior.size != N:
+        return None
+    return _minmax_norm(prior)
+
+
 def build_fixed_queries(data, num_queries=40, seed=0, query_file=None):
     """构建/加载一组固定查询节点, 用于跨配置(GCN vs HII)可复现对比 (对齐 CLUHCS 40 查询协议)。
 
@@ -406,9 +417,15 @@ def _recall_expand_community(q, comm, sims_q, adj, max_add=0, pool_size=0,
                              min_sim=None, high_order_beta=0.0,
                              comm_direct_beta=0.0, comm_cohesion_beta=0.0,
                              boundary_gamma=0.0, hse_normalize=False,
+                             node_prior=None, anomaly_alpha=0.0,
                              max_size=0):
     max_add = max(0, int(max_add))
     max_size = max(0, int(max_size))
+    anomaly_alpha = max(0.0, float(anomaly_alpha))
+    if node_prior is not None:
+        node_prior = node_prior.detach().cpu().numpy() if hasattr(node_prior, 'detach') else np.asarray(node_prior)
+        node_prior = np.asarray(node_prior, dtype=np.float64).reshape(-1)
+
     if max_add <= 0 or not comm:
         return comm
     comm = set(int(v) for v in comm)
@@ -438,6 +455,8 @@ def _recall_expand_community(q, comm, sims_q, adj, max_add=0, pool_size=0,
         comm_direct_beta, normalize=hse_normalize)
     if hse_scores is not None:
         scores = scores + hse_scores
+    if node_prior is not None and anomaly_alpha > 0:
+        scores = scores + anomaly_alpha * node_prior[cand_arr]
     score_floor = float(min_sim) if min_sim is not None else float('-inf')
     if scores.size > 0:
         score_floor = max(score_floor, float(scores.mean() + 0.25 * scores.std()))
@@ -459,7 +478,8 @@ def _recall_expand_community(q, comm, sims_q, adj, max_add=0, pool_size=0,
 def _prune_community_edges(q, comm, sims_q, adj, avg, w,
                            max_remove=2, prune_pool_size=32,
                            min_size=1, min_gain_tol=0.0,
-                           size_penalty=0.0, max_size=0):
+                           size_penalty=0.0, node_prior=None,
+                           anomaly_alpha=0.0, max_size=0):
     """轻量后处理: 只删掉最边缘、最不划算的少量节点。"""
     comm = set(int(v) for v in comm)
     q = int(q)
@@ -469,6 +489,10 @@ def _prune_community_edges(q, comm, sims_q, adj, avg, w,
     min_gain_tol = max(0.0, float(min_gain_tol))
     size_penalty = max(0.0, float(size_penalty))
     max_size = max(0, int(max_size))
+    anomaly_alpha = max(0.0, float(anomaly_alpha))
+    if node_prior is not None:
+        node_prior = node_prior.detach().cpu().numpy() if hasattr(node_prior, 'detach') else np.asarray(node_prior)
+        node_prior = np.asarray(node_prior, dtype=np.float64).reshape(-1)
     if max_size > 0:
         min_size = min(min_size, max_size)
     if max_remove <= 0 or len(comm) <= min_size:
@@ -480,7 +504,10 @@ def _prune_community_edges(q, comm, sims_q, adj, avg, w,
         base_sum = float(sum(float(sims_q[v]) for v in comm))
         base_n = len(comm)
         base_density = (base_sum - base_n * float(avg)) / (base_n ** float(w))
-        base_score = base_density - size_penalty * base_n
+        base_prior_sum = 0.0
+        if node_prior is not None and anomaly_alpha > 0:
+            base_prior_sum = float(sum(float(node_prior[v]) for v in comm))
+        base_score = base_density + anomaly_alpha * (base_prior_sum / base_n if base_n > 0 else 0.0) - size_penalty * base_n
         force_shrink = max_size > 0 and len(comm) > max_size
 
         cand_nodes = [v for v in comm if v != q]
@@ -506,7 +533,8 @@ def _prune_community_edges(q, comm, sims_q, adj, avg, w,
                 continue
             new_sum = base_sum - float(sims_q[v])
             new_density = (new_sum - new_n * float(avg)) / (new_n ** float(w))
-            new_score = new_density - size_penalty * new_n
+            new_prior = base_prior_sum - float(node_prior[v]) if node_prior is not None and anomaly_alpha > 0 else 0.0
+            new_score = new_density + anomaly_alpha * (new_prior / new_n if new_n > 0 else 0.0) - size_penalty * new_n
             if new_score > best_score + min_gain_tol:
                 best_score = new_score
                 best_node = v
@@ -624,6 +652,8 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                          early_stop_min_size=1,
                          size_penalty=0.0,
                          balance_alpha=0.0,
+                         node_prior=None,
+                         anomaly_alpha=0.0,
                          max_size=0):
     """
     单次贪心扩展: 从 frontier 中按相似度/结构连接度选择节点, 记录累计 sim 和。
@@ -645,6 +675,10 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
     balance_alpha = max(0.0, float(balance_alpha))
     size_penalty = max(0.0, float(size_penalty))
     max_size = max(0, int(max_size))
+    anomaly_alpha = max(0.0, float(anomaly_alpha))
+    if node_prior is not None:
+        node_prior = node_prior.detach().cpu().numpy() if hasattr(node_prior, 'detach') else np.asarray(node_prior)
+        node_prior = np.asarray(node_prior, dtype=np.float64).reshape(-1)
     use_hse = (hse_high_order_beta > 0 or hse_comm_cohesion_beta > 0
                or hse_boundary_gamma > 0 or hse_comm_direct_beta > 0)
     visited = {q}
@@ -729,6 +763,8 @@ def _greedy_expand_trace(q, sims_q, adj, max_iter,
                     hse_boundary_gamma, hse_comm_direct_beta,
                     normalize=hse_normalize)
                 scores = scores + hse_scores
+            if node_prior is not None and anomaly_alpha > 0:
+                scores = scores + anomaly_alpha * node_prior[cand_arr]
             selected_utilities = _utility_map(cand_arr, scores)
             take = min(seed_target - added, cand_arr.size)
             if take <= 0:
@@ -827,12 +863,17 @@ def _best_community_for_w(node_order, cum_sims, avg, w,
                           patience=0, min_gain_tol=0.0,
                           select_mode='first_drop', min_size=1,
                           size_penalty=0.0, balance_alpha=0.0,
+                          node_prior=None, anomaly_alpha=0.0,
                           max_size=0):
     """在一条扩展轨迹上, 对给定 w 找密度峰值, 返回对应社区 set。"""
     sizes = np.arange(1, len(cum_sims) + 1, dtype=np.float64)
     densities = (cum_sims - sizes * avg) / (sizes ** w)
     support = cum_sims / sizes
     scores = densities + max(0.0, float(balance_alpha)) * support - size_penalty * sizes
+    if node_prior is not None and anomaly_alpha > 0:
+        prior = np.asarray(node_prior, dtype=np.float64).reshape(-1)
+        prior = prior[np.asarray(node_order, dtype=np.int64)]
+        scores = scores + anomaly_alpha * (np.cumsum(prior) / sizes)
     usable_len = len(scores)
     if max_size and max_size > 0:
         usable_len = min(usable_len, max(1, int(max_size)))
@@ -869,6 +910,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             num_queries=None, seed=0, max_iter=10000,
                             compute_structure=False,
                             node_boost=None, boost_factor=1.5, queries=None,
+                            node_prior=None, anomaly_alpha=0.0,
                             greedy_patience=0, greedy_min_gain_tol=0.0,
                             greedy_size_penalty=0.0, balance_alpha=0.15, greedy_max_size=0,
                             greedy_adaptive_cap_alpha=0.0,
@@ -916,6 +958,7 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
     sims = (emb @ emb.t()).numpy()
 
     mult = _boost_multiplier(node_boost, boost_factor, N)
+    prior = _prepare_node_prior(node_prior, N)
     if mult is not None:
         sims = sims * mult[None, :]
 
@@ -979,6 +1022,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             early_stop_min_size=effective_min_size,
             size_penalty=greedy_size_penalty,
             balance_alpha=balance_alpha,
+            node_prior=prior,
+            anomaly_alpha=anomaly_alpha,
             max_size=trace_max_size)
 
         for w in w_list:
@@ -991,6 +1036,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                 min_size=effective_min_size,
                 size_penalty=greedy_size_penalty,
                 balance_alpha=balance_alpha,
+                node_prior=prior,
+                anomaly_alpha=anomaly_alpha,
                 max_size=max_size)
             comm = _prune_community_edges(
                 q, comm, sims_q, adj, density_avg, w,
@@ -999,6 +1046,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                 min_size=effective_min_size,
                 min_gain_tol=greedy_min_gain_tol,
                 size_penalty=greedy_size_penalty,
+                node_prior=prior,
+                anomaly_alpha=anomaly_alpha,
                 max_size=max_size)
             if recall_expand_size > 0:
                 comm = _recall_expand_community(
@@ -1011,6 +1060,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                     comm_cohesion_beta=hse_comm_cohesion_beta,
                     boundary_gamma=hse_boundary_gamma,
                     hse_normalize=hse_normalize,
+                    node_prior=prior,
+                    anomaly_alpha=anomaly_alpha,
                     max_size=max_size)
             pred = set(comm)
             if not include_query_in_pred:
@@ -1296,6 +1347,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      node_boost=None, boost_factor=1.5, queries=None,
                                      edge_index=None,
                                      intent_proj_fn=None, intent_rerank_alpha=0.0,
+                                     node_prior=None, anomaly_alpha=0.0,
                                      greedy_patience=0, greedy_min_gain_tol=0.0,
                                      greedy_size_penalty=0.0, balance_alpha=0.15, greedy_max_size=0,
                                      greedy_adaptive_cap_alpha=0.0,
@@ -1341,6 +1393,7 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
         label_sets[label] = set(np.where(y == label)[0].tolist())
 
     mult = _boost_multiplier(node_boost, boost_factor, N)
+    prior = _prepare_node_prior(node_prior, N)
 
     accum = {w: {'P': [], 'R': [], 'F': [], 'J': [], 'sizes': [],
                  'Den': [], 'Con': [], 'Dia': [], 'Cap': []} for w in w_list}
@@ -1408,6 +1461,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             early_stop_min_size=effective_min_size,
             size_penalty=greedy_size_penalty,
             balance_alpha=balance_alpha,
+            node_prior=prior,
+            anomaly_alpha=anomaly_alpha,
             max_size=trace_max_size)
 
         for w in w_list:
@@ -1420,6 +1475,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                 min_size=effective_min_size,
                 size_penalty=greedy_size_penalty,
                 balance_alpha=balance_alpha,
+                node_prior=prior,
+                anomaly_alpha=anomaly_alpha,
                 max_size=max_size)
             comm = _prune_community_edges(
                 q, comm, sims_q, adj, density_avg, w,
@@ -1428,6 +1485,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                 min_size=effective_min_size,
                 min_gain_tol=greedy_min_gain_tol,
                 size_penalty=greedy_size_penalty,
+                node_prior=prior,
+                anomaly_alpha=anomaly_alpha,
                 max_size=max_size)
             if recall_expand_size > 0:
                 comm = _recall_expand_community(
@@ -1440,6 +1499,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                     comm_cohesion_beta=hse_comm_cohesion_beta,
                     boundary_gamma=hse_boundary_gamma,
                     hse_normalize=hse_normalize,
+                    node_prior=prior,
+                    anomaly_alpha=anomaly_alpha,
                     max_size=max_size)
             pred = set(comm)
             if not include_query_in_pred:

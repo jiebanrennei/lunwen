@@ -1,10 +1,11 @@
 """
 创新点四: 对抗社区感知的边重要性学习 + 可疑节点识别
 
-边重要性综合三个维度:
+边重要性综合四个维度:
 1. 拓扑矛盾性: 无直接边但共享异常邻居 (共同邻居分析)
 2. 语义背离度: 语义相似但拓扑疏远 ("说得多, 连得少")
-3. 意图相关性: 边与查询意图的相关程度
+3. 时序异常: 节点时间戳偏离群体中心
+4. 意图相关性: 边与查询意图的相关程度
 
 可疑节点识别器: 边重要性聚合到节点 + 节点异常分 -> Top-K。
 """
@@ -13,6 +14,41 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.utils import degree, to_dense_adj
+
+
+def compute_temporal_anomaly(node_time, num_nodes, device=None):
+    if node_time is None:
+        return torch.zeros(num_nodes, device=device)
+    if not torch.is_tensor(node_time):
+        node_time = torch.as_tensor(node_time, dtype=torch.float32)
+    else:
+        node_time = node_time.to(dtype=torch.float32)
+    if device is not None:
+        node_time = node_time.to(device)
+    node_time = node_time.reshape(-1)
+    if node_time.numel() != num_nodes:
+        return torch.zeros(num_nodes, device=node_time.device)
+    valid = torch.isfinite(node_time)
+    if not valid.any().item():
+        return torch.zeros(num_nodes, device=node_time.device)
+    valid_time = node_time[valid]
+    eps = 1e-8
+    median = valid_time.median()
+    mad = (valid_time - median).abs().median()
+    if float(mad) > eps:
+        score = (node_time - median).abs() / (1.4826 * mad + eps)
+    else:
+        mean = valid_time.mean()
+        std = valid_time.std(unbiased=False)
+        if float(std) > eps:
+            score = (node_time - mean).abs() / (std + eps)
+        else:
+            score = torch.zeros_like(node_time)
+    score = torch.where(valid, score, torch.zeros_like(score))
+    max_score = score.max()
+    if float(max_score) > eps:
+        score = score / (max_score + eps)
+    return score
 
 
 class AdversarialCommunityAwareEdgeImportance(nn.Module):
@@ -96,7 +132,7 @@ class SuspiciousNodeIdentifier(nn.Module):
             nn.Dropout(drop_p), nn.Linear(num_hidden, 1)
         )
 
-    def forward(self, z, edge_index, intent_vector):
+    def forward(self, z, edge_index, intent_vector, node_time=None):
         num_nodes = z.size(0)
         edge_imp = self.edge_importance(z, edge_index, intent_vector, num_nodes)
 
@@ -114,7 +150,11 @@ class SuspiciousNodeIdentifier(nn.Module):
             self.anomaly_mlp(torch.cat([z, intent_exp], dim=-1)).squeeze(-1)
         )
 
-        node_score = 0.5 * node_edge_score + 0.5 * anomaly
+        time_anomaly = compute_temporal_anomaly(node_time, num_nodes, device=z.device)
+        if float(time_anomaly.abs().sum()) > 0.0:
+            node_score = (0.4 * node_edge_score + 0.4 * anomaly + 0.2 * time_anomaly)
+        else:
+            node_score = 0.5 * node_edge_score + 0.5 * anomaly
         k = min(self.top_k, num_nodes)
         topk_idx = torch.topk(node_score, k).indices
         return topk_idx, node_score

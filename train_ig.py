@@ -138,6 +138,17 @@ def build_intent_vector(source, query, intent_dim, device, seed,
     return F.normalize(iv, dim=-1).to(device)
 
 
+def extract_node_time(data):
+    for name in ('node_time', 'timestamps', 'time'):
+        value = getattr(data, name, None)
+        if value is None:
+            continue
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value)
+        return value.to(data.x.device)
+    return None
+
+
 def filter_upper_edges(edges):
     u, v = edges[0], edges[1]
     mask = u < v
@@ -1111,6 +1122,8 @@ if __name__ == '__main__':
                         help='Greedy CS density-drop tolerance; 0 keeps old behavior')
     parser.add_argument('--greedy_size_penalty', type=float, default=0.0,
                         help='Penalty for oversized greedy communities; 0 keeps old behavior')
+    parser.add_argument('--greedy_anomaly_alpha', type=float, default=0.0,
+                        help='Node-anomaly prior weight for greedy community search')
     parser.add_argument('--greedy_balance_alpha', type=float, default=0.15,
                         help='Mean-similarity support bonus for greedy trace stop and prefix selection')
     parser.add_argument('--greedy_max_size', type=int, default=0,
@@ -1616,7 +1629,7 @@ if __name__ == '__main__':
 
         # 创新点四: 识别可疑节点(用重构视图表示, 保留梯度以训练识别器)
         susp_idx, node_score = suspicious_identifier(
-            z_rec, data.edge_index, intent_vector
+            z_rec, data.edge_index, intent_vector, node_time=extract_node_time(data)
         )
         # 训练识别器: 可疑分对齐两视图发散度(被篡改节点发散更大)
         with torch.no_grad():
@@ -1819,8 +1832,11 @@ if __name__ == '__main__':
                                     avg_intent)
         else:
             emb = contrastive_model(data.x, data.edge_index, ones, avg_intent)
-        _, node_boost = suspicious_identifier(emb, data.edge_index, avg_intent)
-    node_boost_eval = None if args.no_suspicious_boost else node_boost
+        _, node_score = suspicious_identifier(
+            emb, data.edge_index, avg_intent, node_time=extract_node_time(data)
+        )
+    node_boost_eval = None if args.no_suspicious_boost else node_score
+    node_prior_eval = node_boost_eval
 
     # ========== Actor-Critic 对抗图生成器 (§7.2 Step4, 自监督) ==========
     # 主编码器收敛后单独训练, 用冻结的 emb; 不动上面的 Min-Max 主循环。
@@ -1901,6 +1917,8 @@ if __name__ == '__main__':
             queries=fixed_queries, edge_index=ei_arg,
             intent_proj_fn=contrastive_model.intent_proj,
             intent_rerank_alpha=args.intent_rerank_alpha,
+            node_prior=node_prior_eval,
+            anomaly_alpha=args.greedy_anomaly_alpha,
             greedy_patience=args.greedy_patience,
             greedy_min_gain_tol=args.greedy_min_gain_tol,
             greedy_size_penalty=args.greedy_size_penalty,
@@ -1964,6 +1982,8 @@ if __name__ == '__main__':
                                             hse_comm_direct_beta=args.greedy_comm_direct_beta,
                                             hse_normalize=args.greedy_hse_normalize,
                                             hse_density=args.greedy_hse_density,
+                                            node_prior=node_prior_eval,
+                                            anomaly_alpha=args.greedy_anomaly_alpha,
                                             recall_expand_size=args.greedy_recall_expand_size,
                                             recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta)
 
