@@ -880,6 +880,9 @@ def build_ilssc_args(z_rec, data, q_epoch, intent_vector, intent_generator,
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='cora_lcc')
+    parser.add_argument('--perturbed_data', type=str, default=None,
+                        help='Path to perturbed dataset file (e.g., data/ACM_pert_combined_medium_seed0.pt). '
+                             'If None, use original dataset.')
     parser.add_argument('--seed', type=int, default=123)
     parser.add_argument('--learning_rate_train', type=float, default=0.001)
     parser.add_argument('--learning_rate_adv', type=float, default=0.0005)
@@ -1308,6 +1311,18 @@ if __name__ == '__main__':
     else:
         dataset = get_dataset('./datasets/', args.dataset)
     data = dataset[0]
+
+    # 加载扰动数据集（如果指定）
+    if args.perturbed_data is not None:
+        from data_perturbation import load_perturbed_data
+        print(f"\n{'='*60}")
+        print(f"Loading perturbed dataset: {args.perturbed_data}")
+        print(f"{'='*60}")
+        data = load_perturbed_data(args.perturbed_data)
+        print(f"Perturbed data loaded successfully!")
+        print(f"Number of nodes: {data.num_nodes}")
+        print(f"Number of edges: {data.edge_index.size(1)}")
+        print(f"{'='*60}\n")
 
     # 兼容: 没有 edge_index_list 的数据集补齐
     if not hasattr(data, 'edge_index_list'):
