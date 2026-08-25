@@ -105,7 +105,11 @@ class Encoder(torch.nn.Module):
                 out = self.dropout(out)
                 return self.activation(out)
 
-            if self.training and x.requires_grad:
+            # 训练时总是 checkpoint: data.x 默认不要求梯度, 不能用 x.requires_grad 判断
+            if self.training:
+                # 保证至少一个输入可导, 让 checkpoint 真正记录并反向重算
+                if not x.requires_grad:
+                    x = x.detach().requires_grad_(True)
                 if edge_weight is None:
                     x = checkpoint(lambda inp: _layer_forward(inp, None), x)
                 else:

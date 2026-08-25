@@ -130,10 +130,14 @@ class HierarchicalIntentInjectedGNN(nn.Module):
     def forward(self, x, edge_index, edge_weight, intent):
         intent_h = self.intent_adapter(intent)            # [out_channels]
 
+        # 训练时让 x 要求梯度, 这样后续所有 checkpoint 都能真正启用
+        if self.training and not x.requires_grad:
+            x = x.detach().requires_grad_(True)
+
         def _local_forward(inp, edge_weight=edge_weight, edge_index=edge_index, intent_h=intent_h):
             return self.activation(self.local(inp, edge_index, edge_weight, intent_h))
 
-        if self.training and x.requires_grad:
+        if self.training:
             if edge_weight is None:
                 h = checkpoint(lambda inp: _local_forward(inp, None), x)
             else:
