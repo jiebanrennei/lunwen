@@ -4,10 +4,10 @@
 边重要性综合四个维度:
 1. 拓扑矛盾性: 无直接边但共享异常邻居 (共同邻居分析)
 2. 语义背离度: 语义相似但拓扑疏远 ("说得多, 连得少")
-3. 时序异常: 节点时间戳偏离群体中心
-4. 意图相关性: 边与查询意图的相关程度
+3. 意图相关性: 边与查询意图的相关程度
+4. 时序异常: 节点时间戳偏离群体中心
 
-可疑节点识别器: 边重要性聚合到节点 + 节点异常分 -> Top-K。
+可疑节点识别器: 边重要性聚合到节点 + 节点异常分 + 时序异常 -> Top-K。
 """
 
 import torch
@@ -160,17 +160,40 @@ class SuspiciousNodeIdentifier(nn.Module):
         node_deg.index_add_(0, src, torch.ones_like(edge_imp))
         node_edge_score = node_imp_sum / node_deg.clamp(min=1.0)
 
-        # 节点异常分
+        # 节点异常分 (语义-意图偏离)
         intent_exp = intent_vector.unsqueeze(0).expand(num_nodes, -1)
         anomaly = torch.sigmoid(
             self.anomaly_mlp(torch.cat([z, intent_exp], dim=-1)).squeeze(-1)
         )
 
+        # 时序异常
         time_anomaly = compute_temporal_anomaly(node_time, num_nodes, device=z.device)
-        if float(time_anomaly.abs().sum()) > 0.0:
-            node_score = (0.4 * node_edge_score + 0.4 * anomaly + 0.2 * time_anomaly)
+        has_time = float(time_anomaly.abs().sum()) > 0.0
+
+        # 统一四维异常打分
+        w_topo = 0.3
+        w_sem = 0.3
+        w_intent = 0.3
+        w_time = 0.1 if has_time else 0.0
+        if has_time:
+            total = w_topo + w_sem + w_intent + w_time
+            w_topo = w_topo / total
+            w_sem = w_sem / total
+            w_intent = w_intent / total
+            w_time = w_time / total
+            node_score = (w_topo * node_edge_score +
+                          w_sem * anomaly +
+                          w_intent * anomaly +
+                          w_time * time_anomaly)
         else:
-            node_score = 0.5 * node_edge_score + 0.5 * anomaly
+            total = w_topo + w_sem + w_intent
+            w_topo = w_topo / total
+            w_sem = w_sem / total
+            w_intent = w_intent / total
+            node_score = (w_topo * node_edge_score +
+                          w_sem * anomaly +
+                          w_intent * anomaly)
+
         k = min(self.top_k, num_nodes)
         topk_idx = torch.topk(node_score, k).indices
         return topk_idx, node_score

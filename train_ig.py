@@ -1167,6 +1167,12 @@ if __name__ == '__main__':
                         help='Add up to N high-order frontier nodes after HSE core community selection')
     parser.add_argument('--greedy_recall_min_sim_delta', type=float, default=0.0,
                         help='Minimum fallback candidate similarity as avg_sim + delta')
+    parser.add_argument('--acs_seed_topk', type=int, default=0,
+                        help='Adversarial community generator: top-K suspicious seeds; 0 disables ACS')
+    parser.add_argument('--acs_rec_radius', type=int, default=2,
+                        help='Adversarial community generator: reconstruction-view radius expansion')
+    parser.add_argument('--acs_anomaly_boost', type=float, default=0.0,
+                        help='Adversarial community generator: weight on anomaly prior in candidate scoring')
     parser.add_argument('--include_query_in_pred', action='store_true',
                         help='Include query node in both predicted and truth communities during greedy CS evaluation')
     parser.add_argument('--eval_perturb_mode', type=str, default='none',
@@ -1258,6 +1264,9 @@ if __name__ == '__main__':
           f"greedy_hse_density={args.greedy_hse_density} "
           f"greedy_recall_expand_size={args.greedy_recall_expand_size} "
           f"greedy_recall_min_sim_delta={args.greedy_recall_min_sim_delta} "
+          f"acs_seed_topk={args.acs_seed_topk} "
+          f"acs_rec_radius={args.acs_rec_radius} "
+          f"acs_anomaly_boost={args.acs_anomaly_boost} "
           f"include_query_in_pred={args.include_query_in_pred} "
           f"eval_perturb={args.eval_perturb_mode}:{args.eval_perturb_rate} "
           f"model_name={args.model_name} "
@@ -1850,11 +1859,12 @@ if __name__ == '__main__':
                                     avg_intent)
         else:
             emb = contrastive_model(data.x, data.edge_index, ones, avg_intent)
-        _, node_score = suspicious_identifier(
+        susp_idx_eval, node_score = suspicious_identifier(
             emb, data.edge_index, avg_intent, node_time=extract_node_time(data)
         )
     node_boost_eval = None if args.no_suspicious_boost else node_score
     node_prior_eval = node_boost_eval
+    susp_idx_eval_np = susp_idx_eval.detach().cpu().numpy() if susp_idx_eval is not None else None
 
     # ========== Actor-Critic 对抗图生成器 (§7.2 Step4, 自监督) ==========
     # 主编码器收敛后单独训练, 用冻结的 emb; 不动上面的 Min-Max 主循环。
@@ -1962,7 +1972,11 @@ if __name__ == '__main__':
             hse_normalize=args.greedy_hse_normalize,
             hse_density=args.greedy_hse_density,
             recall_expand_size=args.greedy_recall_expand_size,
-            recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta
+            recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta,
+            suspicious_idx=susp_idx_eval_np,
+            acs_seed_topk=args.acs_seed_topk,
+            acs_rec_radius=args.acs_rec_radius,
+            acs_anomaly_boost=args.acs_anomaly_boost,
         )
     else:
         cs_results = community_search(emb, data, topk=cs_topk,
@@ -2003,7 +2017,11 @@ if __name__ == '__main__':
                                             node_prior=node_prior_eval,
                                             anomaly_alpha=args.greedy_anomaly_alpha,
                                             recall_expand_size=args.greedy_recall_expand_size,
-                                            recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta)
+                                            recall_expand_min_sim_delta=args.greedy_recall_min_sim_delta,
+                                            suspicious_idx=susp_idx_eval_np,
+                                            acs_seed_topk=args.acs_seed_topk,
+                                            acs_rec_radius=args.acs_rec_radius,
+                                            acs_anomaly_boost=args.acs_anomaly_boost)
 
     # Actor-Critic 社区搜索评测 (启用时)
     cs_rl = None

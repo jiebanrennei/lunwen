@@ -12,6 +12,95 @@ from tqdm import tqdm
 from sklearn.metrics import f1_score
 
 
+class AdversarialCommunityGenerator(object):
+    """对抗社区生成器 (创新点四): 以可疑节点为种子, 在重构/对抗双视图下显式生成对抗社区候选。
+
+    重构视图: 从 query + top-K 可疑节点出发做 radius-hop 扩展, 收集拓扑邻域候选。
+    对抗视图: 在候选打分中显式加入异常先验 node_prior (来自四维异常打分), 使得
+              拓扑可疑但语义/意图对齐的节点被优先纳入, 而不是被纯相似度 greedy 丢弃。
+
+    输入: 查询节点 q, 可疑节点集合 suspicious_idx, 异常先验 node_prior, 邻接 adj, sims_q。
+    输出: (community_set, score)。
+    """
+
+    def __init__(self, seed_topk=5, rec_radius=2, anomaly_boost=0.5, score_topk_ratio=1.5):
+        self.seed_topk = max(1, int(seed_topk))
+        self.rec_radius = max(1, int(rec_radius))
+        self.anomaly_boost = max(0.0, float(anomaly_boost))
+        self.score_topk_ratio = max(1.0, float(score_topk_ratio))
+
+    def _select_suspicious_seeds(self, suspicious_idx, node_prior):
+        suspicious_idx = np.asarray(suspicious_idx, dtype=np.int64).reshape(-1)
+        if suspicious_idx.size == 0:
+            return suspicious_idx
+        if node_prior is not None:
+            prior = np.asarray(node_prior, dtype=np.float64).reshape(-1)
+            if prior.size >= suspicious_idx.size:
+                sus_prior = prior[suspicious_idx]
+                order = np.argsort(-sus_prior)
+                k = min(self.seed_topk, suspicious_idx.size)
+                return suspicious_idx[order[:k]]
+        return suspicious_idx[:self.seed_topk]
+
+    def _radius_expand(self, seeds, adj, exclude, radius):
+        candidates = set()
+        frontier = [int(s) for s in seeds]
+        for _ in range(int(radius)):
+            nxt = []
+            for u in frontier:
+                u = int(u)
+                if u < 0 or u >= len(adj):
+                    continue
+                for v in adj[u]:
+                    v = int(v)
+                    if v not in candidates and v not in exclude:
+                        candidates.add(v)
+                        nxt.append(v)
+            frontier = nxt
+        return candidates
+
+    def generate(self, q, suspicious_idx, node_prior, adj, sims_q):
+        """生成对抗社区候选, 返回 (community_set, score)。"""
+        q = int(q)
+        if suspicious_idx is None or len(suspicious_idx) == 0:
+            return set(), 0.0
+
+        prior = None
+        if node_prior is not None:
+            prior = np.asarray(node_prior, dtype=np.float64).reshape(-1)
+            if prior.size == 0:
+                prior = None
+
+        seeds = self._select_suspicious_seeds(suspicious_idx, prior)
+        if seeds.size == 0:
+            return set(), 0.0
+
+        # 重构视图: 从 query + 可疑种子做 radius-hop 扩展
+        rec_candidates = self._radius_expand([q] + seeds.tolist(), adj, {q}, self.rec_radius)
+        rec_candidates.discard(q)
+        if not rec_candidates:
+            return set(), 0.0
+
+        # 对抗视图: 用 sim + anomaly_boost * prior 联合打分, 让可疑但对齐的节点优先入选
+        sims_q = np.asarray(sims_q, dtype=np.float64).reshape(-1)
+        candidate_scores = {}
+        for v in rec_candidates:
+            v = int(v)
+            sim_score = float(sims_q[v]) if v < sims_q.size else 0.0
+            anomaly_score = float(prior[v]) if prior is not None and v < prior.size else 0.0
+            candidate_scores[v] = sim_score + self.anomaly_boost * anomaly_score
+
+        if not candidate_scores:
+            return set(), 0.0
+        items = sorted(candidate_scores.items(), key=lambda kv: -kv[1])
+        topk = max(1, int(round(len(items) * min(1.0, self.score_topk_ratio))))
+        topk = min(len(items), max(1, topk))
+        community = set(int(v) for v, _ in items[:topk])
+        community.add(q)
+        score = float(sum(s for _, s in items[:topk]))
+        return community, score
+
+
 def get_split(num_samples: int, train_ratio: float = 0.1, test_ratio: float = 0.8):
     assert train_ratio + test_ratio < 1
     train_size = int(num_samples * train_ratio)
@@ -569,6 +658,20 @@ def _bfs_farthest(start, node_set, adj):
     return farthest, max_d
 
 
+def _community_density(comm, sims_q):
+    """社区内部平均相似度: 成员对 query 的 sims 均值。"""
+    if not comm:
+        return 0.0
+    total = 0.0
+    n = 0
+    for v in comm:
+        v = int(v)
+        if 0 <= v < len(sims_q):
+            total += float(sims_q[v])
+            n += 1
+    return total / max(1, n)
+
+
 def _structure_metrics(nodes, adj, total_vol):
     """社区结构质量: density / conductance / diameter(纯 Python,无外部依赖)。"""
     node_set = set(int(v) for v in nodes)
@@ -932,7 +1035,11 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                             hse_normalize=False,
                             hse_density=False,
                             recall_expand_size=0,
-                            recall_expand_min_sim_delta=0.0):
+                            recall_expand_min_sim_delta=0.0,
+                            suspicious_idx=None,
+                            acs_seed_topk=0,
+                            acs_rec_radius=0,
+                            acs_anomaly_boost=0.0):
     """
     贪心 + 密度自适应的社区搜索评估。
 
@@ -968,6 +1075,17 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
     label_sets = {}
     for label in np.unique(y):
         label_sets[label] = set(np.where(y == label)[0].tolist())
+
+    # 对抗社区生成器 (创新点四)
+    acs_gen = None
+    acs_susp_arr = None
+    if int(acs_seed_topk) > 0 and suspicious_idx is not None and len(suspicious_idx) > 0:
+        acs_gen = AdversarialCommunityGenerator(
+            seed_topk=acs_seed_topk,
+            rec_radius=acs_rec_radius if int(acs_rec_radius) > 0 else 2,
+            anomaly_boost=acs_anomaly_boost,
+        )
+        acs_susp_arr = np.asarray(suspicious_idx, dtype=np.int64).reshape(-1)
 
     # 初始化每个 w 的累加器
     accum = {w: {'P': [], 'R': [], 'F': [], 'J': [], 'sizes': [],
@@ -1026,6 +1144,12 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             anomaly_alpha=anomaly_alpha,
             max_size=trace_max_size)
 
+        # 对抗社区候选 (创新点四): 每个 query 只生成一次, 供各 w 竞争
+        acs_comm = None
+        if acs_gen is not None and acs_susp_arr is not None:
+            acs_comm, _acs_score = acs_gen.generate(
+                int(q), acs_susp_arr, prior, adj, sims_q)
+
         for w in w_list:
             node_order, cum_sims = shared_trace
             comm = _best_community_for_w(
@@ -1063,6 +1187,12 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                     node_prior=prior,
                     anomaly_alpha=anomaly_alpha,
                     max_size=max_size)
+            # 对抗社区竞争 (创新点四): 若 ACS 候选密度更高则替换 greedy 结果
+            if acs_comm is not None and len(acs_comm) > 1:
+                acs_density = _community_density(acs_comm, sims_q)
+                greedy_density = _community_density(comm, sims_q)
+                if acs_density > greedy_density:
+                    comm = acs_comm
             pred = set(comm)
             if not include_query_in_pred:
                 pred.discard(int(q))
@@ -1369,7 +1499,11 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                                      hse_normalize=False,
                                      hse_density=False,
                                      recall_expand_size=0,
-                                     recall_expand_min_sim_delta=0.0):
+                                     recall_expand_min_sim_delta=0.0,
+                                     suspicious_idx=None,
+                                     acs_seed_topk=0,
+                                     acs_rec_radius=0,
+                                     acs_anomaly_boost=0.0):
     """
     动态意图 + 贪心扩展社区搜索。
     每个查询节点生成意图→重新编码→贪心扩展。
@@ -1394,6 +1528,17 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
 
     mult = _boost_multiplier(node_boost, boost_factor, N)
     prior = _prepare_node_prior(node_prior, N)
+
+    # 对抗社区生成器 (创新点四)
+    acs_gen = None
+    acs_susp_arr = None
+    if int(acs_seed_topk) > 0 and suspicious_idx is not None and len(suspicious_idx) > 0:
+        acs_gen = AdversarialCommunityGenerator(
+            seed_topk=acs_seed_topk,
+            rec_radius=acs_rec_radius if int(acs_rec_radius) > 0 else 2,
+            anomaly_boost=acs_anomaly_boost,
+        )
+        acs_susp_arr = np.asarray(suspicious_idx, dtype=np.int64).reshape(-1)
 
     accum = {w: {'P': [], 'R': [], 'F': [], 'J': [], 'sizes': [],
                  'Den': [], 'Con': [], 'Dia': [], 'Cap': []} for w in w_list}
@@ -1465,6 +1610,12 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             anomaly_alpha=anomaly_alpha,
             max_size=trace_max_size)
 
+        # 对抗社区候选 (创新点四): 每个 query 只生成一次, 供各 w 竞争
+        acs_comm = None
+        if acs_gen is not None and acs_susp_arr is not None:
+            acs_comm, _acs_score = acs_gen.generate(
+                int(q), acs_susp_arr, prior, adj, sims_q)
+
         for w in w_list:
             node_order, cum_sims = shared_trace
             comm = _best_community_for_w(
@@ -1502,6 +1653,12 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                     node_prior=prior,
                     anomaly_alpha=anomaly_alpha,
                     max_size=max_size)
+            # 对抗社区竞争 (创新点四): 若 ACS 候选密度更高则替换 greedy 结果
+            if acs_comm is not None and len(acs_comm) > 1:
+                acs_density = _community_density(acs_comm, sims_q)
+                greedy_density = _community_density(comm, sims_q)
+                if acs_density > greedy_density:
+                    comm = acs_comm
             pred = set(comm)
             if not include_query_in_pred:
                 pred.discard(int(q))
