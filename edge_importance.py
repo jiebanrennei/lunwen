@@ -151,7 +151,8 @@ class AdversarialCommunityAwareEdgeImportance(nn.Module):
         cn_norm = self._common_neighbor_norm(edge_index, num_nodes)
 
         # 分块计算避免一次性创建大张量 (E × 2*hidden 可能几百 MB)
-        chunk_size = min(4096, max(1, E))
+        # 减小 chunk_size 降低峰值显存 (4096 → 1024)
+        chunk_size = min(1024, max(1, E))
         s_topo_list, s_sem_list, s_intent_list = [], [], []
 
         for start in range(0, E, chunk_size):
@@ -191,8 +192,12 @@ class AdversarialCommunityAwareEdgeImportance(nn.Module):
         s_sem = torch.cat(s_sem_list, dim=0)
         s_intent = torch.cat(s_intent_list, dim=0)
 
+        # 显式释放列表引用, 避免梯度图持有所有 chunk
+        del s_topo_list, s_sem_list, s_intent_list
+
         # --- 融合 ---
         stacked = torch.stack([s_topo, s_sem, s_intent], dim=-1)
+        del s_topo, s_sem, s_intent  # 及时释放
         return self.fuse(stacked).squeeze(-1)                  # [E] in (0,1)
 
 
@@ -225,16 +230,32 @@ class SuspiciousNodeIdentifier(nn.Module):
         node_imp_sum.index_add_(0, src, edge_imp)
         node_deg.index_add_(0, src, torch.ones_like(edge_imp))
         node_edge_score = node_imp_sum / node_deg.clamp(min=1.0)
+        del node_imp_sum, node_deg  # 及时释放
 
-        # 语义异常: 仅基于 z, 捕捉节点在特征空间中的离群程度
-        sem_anomaly = torch.sigmoid(self.sem_anomaly_mlp(z).squeeze(-1))
-        # 意图异常: 基于 [z, intent], 捕捉节点与当前意图的联合偏离
-        intent_exp = intent_vector.unsqueeze(0).expand(num_nodes, -1)
-        intent_anomaly = torch.sigmoid(
-            self.intent_anomaly_mlp(torch.cat([z, intent_exp], dim=-1)).squeeze(-1)
-        )
+        # 分块计算节点级语义/意图异常, 避免一次性对全部 N 节点跑 MLP
+        # (N × hidden 可能几百 MB, 加上梯度图翻倍)
+        node_chunk = 1024
+        sem_list, intent_list = [], []
+        intent_exp_full = intent_vector.unsqueeze(0).expand(num_nodes, -1)
+        for start in range(0, num_nodes, node_chunk):
+            end = min(start + node_chunk, num_nodes)
+            z_chunk = z[start:end]
+            # 语义异常
+            sem_list.append(
+                torch.sigmoid(self.sem_anomaly_mlp(z_chunk).squeeze(-1))
+            )
+            # 意图异常
+            intent_anom_chunk = torch.sigmoid(
+                self.intent_anomaly_mlp(
+                    torch.cat([z_chunk, intent_exp_full[start:end]], dim=-1)
+                ).squeeze(-1)
+            )
+            intent_list.append(intent_anom_chunk)
+        sem_anomaly = torch.cat(sem_list, dim=0)
+        intent_anomaly = torch.cat(intent_list, dim=0)
+        del sem_list, intent_list, intent_exp_full
 
-        # 时序异常
+        # 时序异常 (无梯度, 纯统计量)
         time_anomaly = compute_temporal_anomaly(node_time, num_nodes, device=z.device)
         has_time = float(time_anomaly.abs().sum()) > 0.0
 

@@ -1667,9 +1667,15 @@ if __name__ == '__main__':
             adv_model, contrastive_model, intent_vector)
         alpha = aux.get('alpha') if aux is not None else None
 
-        # 创新点四: 识别可疑节点(用重构视图表示, 保留梯度以训练识别器)
+        # 创新点四: 识别可疑节点(用重构视图表示)
+        # 关键显存优化: 传入 detach 后的 z_rec 和 intent_vector, 避免 edge_importance
+        # 在 E 条边 (ACM ~4.3M) 上分块 forward 的梯度图把所有 chunk 中间量一直
+        # 持有到 backward, 造成 O(N·chunk·hidden) 的显存堆积 (~16GB on ACM).
+        # 识别器自身的 MLP 参数仍从 l_susp 获得梯度, 只是编码器不通过 l_susp
+        # 回传 (编码器由对比损失训练, 语义上更合理).
         susp_idx, node_score = suspicious_identifier(
-            z_rec, data.edge_index, intent_vector, node_time=extract_node_time(data)
+            z_rec.detach(), data.edge_index, intent_vector.detach(),
+            node_time=extract_node_time(data)
         )
         # 训练识别器: 可疑分对齐两视图发散度(被篡改节点发散更大)
         with torch.no_grad():
@@ -1793,17 +1799,6 @@ if __name__ == '__main__':
         model_loss.backward()
         optimizer_train.step()
 
-        # 显式释放 Phase 2 张量, 避免累积到下一 epoch
-        del z_adv, z_rec, reg, fea_up, fea_lo, aux, susp_idx, node_score, divergence, l_susp, model_loss
-        if 'igqc_args' in locals():
-            del igqc_args
-        if 'ic_spnm_args' in locals():
-            del ic_spnm_args
-        if 'ilssc_args' in locals():
-            del ilssc_args
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
         now = t()
         msg = (
             f'(T) | Epoch={epoch:03d}, loss={model_loss:.4f}, '
@@ -1855,6 +1850,21 @@ if __name__ == '__main__':
                 zip(data.relation_names, rel_w.tolist())) + ']'
         print(msg)
         prev = now
+
+        # 显式释放 Phase 2 张量, 避免累积到下一 epoch (日志打印完毕后再释放)
+        del z_adv, z_rec, reg, fea_up, fea_lo, model_loss
+        try:
+            del aux, susp_idx, node_score, divergence, l_susp
+        except NameError:
+            pass
+        if 'igqc_args' in locals():
+            del igqc_args
+        if 'ic_spnm_args' in locals():
+            del ic_spnm_args
+        if 'ilssc_args' in locals():
+            del ilssc_args
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         # 每轮保存最新检查点(覆盖旧的), 供中断后 --resume 续训
         if args.ckpt_interval > 0 and epoch % args.ckpt_interval == 0:
