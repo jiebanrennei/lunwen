@@ -79,57 +79,117 @@ class AdversarialCommunityAwareEdgeImportance(nn.Module):
         self._cn_sig = None
 
     def _common_neighbor_norm(self, edge_index, num_nodes):
+        """用稀疏矩阵乘法 A²[u,v] = u,v 的共同邻居数, 替代 Python 循环。
+
+        原实现用 set 交集逐边遍历, 对 E 条边 × 平均度 d 是 O(E·d) 次 Python 操作;
+        改为 torch.sparse.mm(A, A) + 二分查找, 全部在 C++/CUDA 层完成,
+        在 ACM/IMDB_NEW 规模上可提速 2 个数量级。
+        """
         src, dst = edge_index[0], edge_index[1]
         sig = (num_nodes, edge_index.shape[1], edge_index.data_ptr())
         if (self._cn_norm is not None and self._cn_sig == sig
                 and self._cn_norm.device == edge_index.device):
             return self._cn_norm
         with torch.no_grad():
-            edge_cpu = edge_index.detach().cpu()
-            src_cpu = edge_cpu[0].tolist()
-            dst_cpu = edge_cpu[1].tolist()
-            neighbors = [set() for _ in range(num_nodes)]
-            for u, v in zip(src_cpu, dst_cpu):
-                if u != v:
-                    neighbors[u].add(v)
-            counts = torch.zeros(edge_cpu.size(1), dtype=torch.float32)
-            for idx, (u, v) in enumerate(zip(src_cpu, dst_cpu)):
-                if u == v:
-                    continue
-                nu = neighbors[u]
-                nv = neighbors[v]
-                if len(nu) > len(nv):
-                    nu, nv = nv, nu
-                if nu:
-                    counts[idx] = sum((nbr in nv) for nbr in nu)
-            cn_norm = counts / (counts.max() + 1e-8) if counts.numel() > 0 else counts
-            cn_norm = cn_norm.to(edge_index.device)
+            dev = edge_index.device
+            N = num_nodes
+            E = src.size(0)
+            if E == 0 or N == 0:
+                cn_norm = torch.zeros(E, dtype=torch.float32, device=dev)
+            else:
+                # 去掉自环后再构造稀疏邻接, 与原 Python 实现的语义保持一致
+                no_self = src != dst
+                row, col = src[no_self], dst[no_self]
+                E2 = row.size(0)
+                if E2 == 0:
+                    cn_norm = torch.zeros(E, dtype=torch.float32, device=dev)
+                else:
+                    # 去重: 原 Python 用 set 自动去重, 这里用 torch.unique 对齐语义
+                    edge_keys_build = row * N + col
+                    unique_keys = torch.unique(edge_keys_build)
+                    unique_row = unique_keys // N
+                    unique_col = unique_keys % N
+                    idx = torch.stack([unique_row, unique_col], dim=0)
+                    val = torch.ones(unique_keys.size(0), device=dev, dtype=torch.float32)
+                    A = torch.sparse_coo_tensor(idx, val, (N, N)).coalesce()
+                    # A²[u, v] = Σ_k A[u,k]·A[k,v] = |N(u) ∩ N(v)|
+                    A2 = torch.sparse.mm(A, A).coalesce()
+                    a2_row = A2.indices()[0]
+                    a2_col = A2.indices()[1]
+                    a2_val = A2.values()
+                    # 将 (i, j) 编码为 i*N+j, 用排序 + searchsorted 做批量查找
+                    a2_keys = a2_row * N + a2_col
+                    edge_keys = src * N + dst
+                    sorted_order = torch.argsort(a2_keys)
+                    sorted_keys = a2_keys[sorted_order]
+                    sorted_vals = a2_val[sorted_order]
+                    positions = torch.searchsorted(
+                        sorted_keys, edge_keys
+                    ).clamp(max=sorted_keys.size(0) - 1)
+                    found = sorted_keys[positions] == edge_keys
+                    cn = torch.where(
+                        found, sorted_vals[positions],
+                        torch.zeros(E, dtype=torch.float32, device=dev),
+                    )
+                    # 自环在原 Python 中显式跳过 (if u == v: continue), 这里对齐
+                    if not no_self.all():
+                        cn = torch.where(no_self, cn, torch.zeros_like(cn))
+                    cn_max = cn.max()
+                    if cn.numel() > 0 and float(cn_max) > 0:
+                        cn_norm = cn / (cn_max + 1e-8)
+                    else:
+                        cn_norm = cn
         self._cn_norm = cn_norm
         self._cn_sig = sig
         return cn_norm
 
     def forward(self, z, edge_index, intent_vector, num_nodes):
         src, dst = edge_index[0], edge_index[1]
+        E = edge_index.shape[1]
 
         # --- 维度一: 拓扑矛盾性 ---
         cn_norm = self._common_neighbor_norm(edge_index, num_nodes)
-        topo_feat = torch.cat([z[src], z[dst]], dim=-1)
-        s_topo = self.topo_mlp(topo_feat).squeeze(-1) * cn_norm
 
-        # --- 维度二: 语义背离度 ---
-        sem_sim = F.cosine_similarity(z[src], z[dst], dim=-1)
-        deg = degree(src, num_nodes=num_nodes).clamp(min=1.0)
-        strength = torch.sqrt(deg[src] * deg[dst])
-        strength = strength / (strength.max() + 1e-8)
-        deviation = F.relu(sem_sim - strength)
-        s_sem = self.sem_mlp(deviation.unsqueeze(-1)).squeeze(-1) * deviation
+        # 分块计算避免一次性创建大张量 (E × 2*hidden 可能几百 MB)
+        chunk_size = min(4096, max(1, E))
+        s_topo_list, s_sem_list, s_intent_list = [], [], []
 
-        # --- 维度三: 意图相关性 ---
-        edge_center = 0.5 * (z[src] + z[dst])
-        intent_exp = intent_vector.unsqueeze(0).expand(edge_center.size(0), -1)
-        s_intent = self.intent_mlp(
-            torch.cat([edge_center, intent_exp], dim=-1)
-        ).squeeze(-1)
+        for start in range(0, E, chunk_size):
+            end = min(start + chunk_size, E)
+            src_chunk = src[start:end]
+            dst_chunk = dst[start:end]
+            cn_chunk = cn_norm[start:end]
+
+            # 拓扑矛盾性
+            topo_feat = torch.cat([z[src_chunk], z[dst_chunk]], dim=-1)
+            s_topo_chunk = self.topo_mlp(topo_feat).squeeze(-1) * cn_chunk
+            del topo_feat  # 及时释放
+
+            # 语义背离度
+            sem_sim = F.cosine_similarity(z[src_chunk], z[dst_chunk], dim=-1)
+            deg = degree(src_chunk, num_nodes=num_nodes).clamp(min=1.0)
+            strength = torch.sqrt(deg[src_chunk] * deg[dst_chunk])
+            strength = strength / (strength.max() + 1e-8)
+            deviation = F.relu(sem_sim - strength)
+            s_sem_chunk = self.sem_mlp(deviation.unsqueeze(-1)).squeeze(-1) * deviation
+            del sem_sim, deg, strength, deviation  # 及时释放
+
+            # 意图相关性
+            edge_center = 0.5 * (z[src_chunk] + z[dst_chunk])
+            intent_exp = intent_vector.unsqueeze(0).expand(edge_center.size(0), -1)
+            s_intent_chunk = self.intent_mlp(
+                torch.cat([edge_center, intent_exp], dim=-1)
+            ).squeeze(-1)
+            del edge_center, intent_exp  # 及时释放
+
+            s_topo_list.append(s_topo_chunk)
+            s_sem_list.append(s_sem_chunk)
+            s_intent_list.append(s_intent_chunk)
+
+        # 拼接所有块
+        s_topo = torch.cat(s_topo_list, dim=0)
+        s_sem = torch.cat(s_sem_list, dim=0)
+        s_intent = torch.cat(s_intent_list, dim=0)
 
         # --- 融合 ---
         stacked = torch.stack([s_topo, s_sem, s_intent], dim=-1)
@@ -143,7 +203,13 @@ class SuspiciousNodeIdentifier(nn.Module):
         self.edge_importance = AdversarialCommunityAwareEdgeImportance(
             num_hidden, intent_dim, drop_p
         )
-        self.anomaly_mlp = nn.Sequential(
+        # 语义异常: 仅基于节点特征在空间中的位置 (高异常 = 远离群体)
+        self.sem_anomaly_mlp = nn.Sequential(
+            nn.Linear(num_hidden, num_hidden), nn.ReLU(),
+            nn.Dropout(drop_p), nn.Linear(num_hidden, 1)
+        )
+        # 意图异常: 基于节点特征与意图向量的联合偏离
+        self.intent_anomaly_mlp = nn.Sequential(
             nn.Linear(num_hidden + intent_dim, num_hidden), nn.ReLU(),
             nn.Dropout(drop_p), nn.Linear(num_hidden, 1)
         )
@@ -160,17 +226,19 @@ class SuspiciousNodeIdentifier(nn.Module):
         node_deg.index_add_(0, src, torch.ones_like(edge_imp))
         node_edge_score = node_imp_sum / node_deg.clamp(min=1.0)
 
-        # 节点异常分 (语义-意图偏离)
+        # 语义异常: 仅基于 z, 捕捉节点在特征空间中的离群程度
+        sem_anomaly = torch.sigmoid(self.sem_anomaly_mlp(z).squeeze(-1))
+        # 意图异常: 基于 [z, intent], 捕捉节点与当前意图的联合偏离
         intent_exp = intent_vector.unsqueeze(0).expand(num_nodes, -1)
-        anomaly = torch.sigmoid(
-            self.anomaly_mlp(torch.cat([z, intent_exp], dim=-1)).squeeze(-1)
+        intent_anomaly = torch.sigmoid(
+            self.intent_anomaly_mlp(torch.cat([z, intent_exp], dim=-1)).squeeze(-1)
         )
 
         # 时序异常
         time_anomaly = compute_temporal_anomaly(node_time, num_nodes, device=z.device)
         has_time = float(time_anomaly.abs().sum()) > 0.0
 
-        # 统一四维异常打分
+        # 统一四维异常打分 (四个独立维度)
         w_topo = 0.3
         w_sem = 0.3
         w_intent = 0.3
@@ -182,8 +250,8 @@ class SuspiciousNodeIdentifier(nn.Module):
             w_intent = w_intent / total
             w_time = w_time / total
             node_score = (w_topo * node_edge_score +
-                          w_sem * anomaly +
-                          w_intent * anomaly +
+                          w_sem * sem_anomaly +
+                          w_intent * intent_anomaly +
                           w_time * time_anomaly)
         else:
             total = w_topo + w_sem + w_intent
@@ -191,8 +259,8 @@ class SuspiciousNodeIdentifier(nn.Module):
             w_sem = w_sem / total
             w_intent = w_intent / total
             node_score = (w_topo * node_edge_score +
-                          w_sem * anomaly +
-                          w_intent * anomaly)
+                          w_sem * sem_anomaly +
+                          w_intent * intent_anomaly)
 
         k = min(self.top_k, num_nodes)
         topk_idx = torch.topk(node_score, k).indices

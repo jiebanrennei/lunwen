@@ -15,6 +15,8 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 # 必须在 import numpy/torch 之前设置; 外部已指定则尊重外部值。
 for _v in ("OMP_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ.setdefault(_v, "1")
+# 显存碎片化缓解 (PyTorch 官方推荐)
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import argparse
 import math
@@ -32,6 +34,12 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torch_geometric.nn import GCNConv
 from torch_geometric.utils import to_undirected
+
+
+# ===== CPU offload 开关 (默认关闭, 仅在 <=11GB GPU 上启用) =====
+# 在 24GB+ 机器上跑时, 保持 IGACS_CPU_OFFLOAD_GCNC=0 (默认), 避免 CPU 传播的速度损失。
+# 在 10-12GB 小 GPU 上跑 ACM 等大图时, 设置 IGACS_CPU_OFFLOAD_GCNC=1 启用 CPU 传播兜底。
+_CPU_OFFLOAD_GCNC = os.environ.get("IGACS_CPU_OFFLOAD_GCNC", "0") == "1"
 
 from model import Encoder
 from hii_gnn import HierarchicalIntentInjectedGNN
@@ -1641,6 +1649,11 @@ if __name__ == '__main__':
         (-loss).backward()
         optimizer_adv.step()
 
+        # 显式释放 Phase 1 张量, 避免与 Phase 2 叠加导致 OOM
+        del z_adv, z_rec, reg, fea_up, fea_lo, loss
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         # ----- Phase 2: 主模型(+意图生成器)最小化损失 -----
         contrastive_model.train()
         optimizer_train.zero_grad()
@@ -1779,6 +1792,17 @@ if __name__ == '__main__':
 
         model_loss.backward()
         optimizer_train.step()
+
+        # 显式释放 Phase 2 张量, 避免累积到下一 epoch
+        del z_adv, z_rec, reg, fea_up, fea_lo, aux, susp_idx, node_score, divergence, l_susp, model_loss
+        if 'igqc_args' in locals():
+            del igqc_args
+        if 'ic_spnm_args' in locals():
+            del ic_spnm_args
+        if 'ilssc_args' in locals():
+            del ilssc_args
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         now = t()
         msg = (
