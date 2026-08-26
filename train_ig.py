@@ -1872,6 +1872,21 @@ if __name__ == '__main__':
         model_loss.backward()
         optimizer_train.step()
 
+        # 显式释放 Phase 2 张量, 避免累积到下一轮
+        del z_adv, z_rec, reg, fea_up, fea_lo, aux, model_loss, loss_info
+        if 'divergence' in locals():
+            del divergence
+        if 'node_score' in locals():
+            del node_score
+        if 'igqc_args' in locals():
+            del igqc_args
+        if 'ic_spnm_args' in locals():
+            del ic_spnm_args
+        if 'ilssc_args' in locals():
+            del ilssc_args
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         now = t()
         msg = (
             f'(T) | Epoch={epoch:03d}, loss={model_loss:.4f}, '

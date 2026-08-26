@@ -508,7 +508,13 @@ class IntentContrastiveModel(nn.Module):
             z1 = F.normalize(z1)
             z2 = F.normalize(z2)
         num_nodes = z1.size(0)
-        chunk_size = min(512, max(1, num_nodes))
+        # 动态 chunk size: 大图 (100K+) 用更小的 chunk 避免 OOM
+        if num_nodes > 100000:
+            chunk_size = 128
+        elif num_nodes > 50000:
+            chunk_size = 256
+        else:
+            chunk_size = min(512, max(1, num_nodes))
         losses = []
         for start in range(0, num_nodes, chunk_size):
             end = min(start + chunk_size, num_nodes)
@@ -520,6 +526,8 @@ class IntentContrastiveModel(nn.Module):
             losses.append(-torch.log(
                 pos_sim / (refl_sim.sum(1) + between_sim.sum(1) - refl_diag)
             ))
+            # 显式释放中间张量
+            del refl_sim, between_sim, pos_sim, refl_diag
         return torch.cat(losses, dim=0)
 
     def semi_loss(self, z1, z2):
