@@ -271,8 +271,9 @@ def _load_twitter_dataset(root_path):
         raise FileNotFoundError(f"No .feat files found in {ego_dir}")
 
     # 读取所有特征, 建立 原始ID -> 特征 映射
+    # 注意: 不同 ego 网络的特征维度可能不同, 需要填充到最大维度
     node_feat_raw = {}
-    feat_dim = None
+    max_feat_dim = 0
 
     for fname in feat_files:
         fpath = osp.join(ego_dir, fname)
@@ -283,16 +284,23 @@ def _load_twitter_dataset(root_path):
                     nid = int(parts[0])
                     feat = [int(x) for x in parts[1:]]
                     node_feat_raw[nid] = feat
-                    if feat_dim is None:
-                        feat_dim = len(feat)
+                    max_feat_dim = max(max_feat_dim, len(feat))
 
-    print(f"[twitter] Feature dimension: {feat_dim}, nodes with features: {len(node_feat_raw)}")
+    feat_dim = max_feat_dim
+    print(f"[twitter] Feature dimension: {feat_dim} (max across all ego networks)")
+    print(f"[twitter] Nodes with features: {len(node_feat_raw)}")
 
-    # 构建完整特征矩阵 (缺失特征的节点用零向量)
+    # 构建完整特征矩阵 (缺失特征的节点用零向量, 维度不足的用零填充)
     x = torch.zeros(num_nodes, feat_dim, dtype=torch.float32)
     for nid, idx in node_to_idx.items():
         if nid in node_feat_raw:
-            x[idx] = torch.tensor(node_feat_raw[nid], dtype=torch.float32)
+            feat = node_feat_raw[nid]
+            # 填充到 feat_dim (不足补零, 超出截断)
+            if len(feat) < feat_dim:
+                feat = feat + [0] * (feat_dim - len(feat))
+            elif len(feat) > feat_dim:
+                feat = feat[:feat_dim]
+            x[idx] = torch.tensor(feat, dtype=torch.float32)
 
     # ===== Step 3: 读取 circles, 生成伪标签 =====
     # 每个节点取它所属的第一个 circle 的 ID 作为标签

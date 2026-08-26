@@ -1393,11 +1393,12 @@ if __name__ == '__main__':
     num_edges = data.edge_index.size(1)
     print(f"[data] Graph size: {num_nodes} nodes, {num_edges} edges")
 
-    # 大图自动子图采样: >100K 节点时采样一个子图训练
+    # 大图自动子图采样: >100K 节点 或 >2M 边时采样一个子图训练
     # 这是处理 com-Amazon (334K) 等大图在 12GB GPU 上的实用方案
-    if num_nodes > 100000:
+    should_sample = (num_nodes > 100000) or (num_edges > 2000000)
+    if should_sample:
         target_nodes = min(50000, num_nodes // 2)  # 采样最多 50K 节点
-        print(f"[WARNING] 大图检测 ({num_nodes} nodes). 全图 GCN 在 12GB GPU 上会 OOM.")
+        print(f"[WARNING] 大图检测 ({num_nodes} nodes, {num_edges} edges). 全图 GCN 在 12GB GPU 上会 OOM.")
         print(f"  [AUTO] 启用子图采样: 随机选择 {target_nodes} 个节点及其邻域")
 
         # 随机选择种子节点
