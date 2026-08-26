@@ -359,9 +359,12 @@ def community_search(embeddings, data, topk=(10, 20, 50), num_queries=None, seed
     for label in np.unique(y):
         label_sets[label] = set(np.where(y == label)[0].tolist())
 
+    adv_nodes = _extract_adversarial_nodes(data)
+
     results = {}
     for k in topk:
         P, R, Fm, J = [], [], [], []
+        AP, AR, AF, AJ, AE = [], [], [], [], []
         for q in queries:
             truth = label_sets[y[q]].copy()
             truth.discard(int(q))
@@ -382,18 +385,37 @@ def community_search(embeddings, data, topk=(10, 20, 50), num_queries=None, seed
             j = inter / union if union > 0 else 0.0
             P.append(p); R.append(r); Fm.append(f); J.append(j)
 
+            adv = _adversarial_metrics(pred, adv_nodes, N)
+            if adv is not None:
+                AP.append(adv['precision'])
+                AR.append(adv['recall'])
+                AF.append(adv['f1'])
+                AJ.append(adv['jaccard'])
+                AE.append(adv['enrichment'])
+
         k_label = 'oracle' if k == 'oracle' else str(k)
         results[k] = {
             'precision': float(np.mean(P)) * 100,
             'recall': float(np.mean(R)) * 100,
             'f1': float(np.mean(Fm)) * 100,
             'jaccard': float(np.mean(J)) * 100,
+            'adv_precision': float(np.mean(AP)) * 100 if AP else 0.0,
+            'adv_recall': float(np.mean(AR)) * 100 if AR else 0.0,
+            'adv_f1': float(np.mean(AF)) * 100 if AF else 0.0,
+            'adv_jaccard': float(np.mean(AJ)) * 100 if AJ else 0.0,
+            'adv_enrichment': float(np.mean(AE)) if AE else 0.0,
         }
+        adv_extra = ''
+        if AP:
+            adv_extra = (f" AdvP={results[k]['adv_precision']:.2f}"
+                         f" AdvR={results[k]['adv_recall']:.2f}"
+                         f" AdvF={results[k]['adv_f1']:.2f}"
+                         f" AdvEn={results[k]['adv_enrichment']:.2f}")
         print(f'[CS] k={k_label:<7s} '
               f"P={results[k]['precision']:.2f} "
               f"R={results[k]['recall']:.2f} "
               f"F1={results[k]['f1']:.2f} "
-              f"Jaccard={results[k]['jaccard']:.2f}")
+              f"Jaccard={results[k]['jaccard']:.2f}{adv_extra}")
     return results
 
 
@@ -413,6 +435,60 @@ def _build_adj_list(edge_index, num_nodes):
             adj[s].add(d)
             adj[d].add(s)
     return adj
+
+
+def _extract_adversarial_nodes(data):
+    """从扰动数据中提取被攻击/扰动的节点集合。"""
+    info = getattr(data, 'pert_info', None)
+    if not isinstance(info, dict):
+        return None
+    pert_nodes = info.get('pert_nodes', None)
+    if pert_nodes is None:
+        pert_nodes = getattr(data, 'perturbed_nodes', None)
+    if pert_nodes is None:
+        pert_nodes = getattr(data, 'adv_nodes', None)
+    if pert_nodes is None:
+        return None
+    pert_nodes = np.asarray(pert_nodes, dtype=np.int64).reshape(-1)
+    if pert_nodes.size == 0:
+        return None
+    pert_nodes = np.unique(pert_nodes)
+    return set(int(x) for x in pert_nodes.tolist())
+
+
+def _adversarial_metrics(pred, adv_nodes, num_nodes):
+    """计算对抗信息挖掘指标。"""
+    if adv_nodes is None or len(adv_nodes) == 0:
+        return None
+    pred = set(int(x) for x in pred)
+    adv_nodes = set(int(x) for x in adv_nodes)
+    inter = len(pred & adv_nodes)
+    union = len(pred | adv_nodes)
+    p = inter / len(pred) if len(pred) > 0 else 0.0
+    r = inter / len(adv_nodes) if len(adv_nodes) > 0 else 0.0
+    f = 2 * p * r / (p + r) if (p + r) > 0 else 0.0
+    j = inter / union if union > 0 else 0.0
+    enrich = 0.0
+    if num_nodes > 0 and len(pred) > 0 and len(adv_nodes) > 0:
+        base = len(adv_nodes) / float(num_nodes)
+        enrich = (p / base) if base > 0 else 0.0
+    return {
+        'precision': p * 100.0,
+        'recall': r * 100.0,
+        'f1': f * 100.0,
+        'jaccard': j * 100.0,
+        'enrichment': enrich,
+    }
+
+
+def _merge_metric_lists(accum, metrics, prefix='A'):
+    if metrics is None:
+        return
+    accum[f'{prefix}P'].append(metrics['precision'])
+    accum[f'{prefix}R'].append(metrics['recall'])
+    accum[f'{prefix}F'].append(metrics['f1'])
+    accum[f'{prefix}J'].append(metrics['jaccard'])
+    accum[f'{prefix}E'].append(metrics['enrichment'])
 
 
 def _limit_hse_pool(cand_arr, scores, pool_size):
@@ -1076,6 +1152,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
     for label in np.unique(y):
         label_sets[label] = set(np.where(y == label)[0].tolist())
 
+    adv_nodes = _extract_adversarial_nodes(data)
+
     # 对抗社区生成器 (创新点四)
     acs_gen = None
     acs_susp_arr = None
@@ -1089,7 +1167,8 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
 
     # 初始化每个 w 的累加器
     accum = {w: {'P': [], 'R': [], 'F': [], 'J': [], 'sizes': [],
-                 'Den': [], 'Con': [], 'Dia': [], 'Cap': []} for w in w_list}
+                 'Den': [], 'Con': [], 'Dia': [], 'Cap': [],
+                 'AP': [], 'AR': [], 'AF': [], 'AJ': [], 'AE': []} for w in w_list}
 
     for q in queries:
         truth = label_sets[y[q]].copy()
@@ -1208,6 +1287,14 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             a['P'].append(p); a['R'].append(r); a['F'].append(f); a['J'].append(j)
             a['sizes'].append(len(comm)); a['Cap'].append(float(max_size))
 
+            adv = _adversarial_metrics(pred, adv_nodes, N)
+            if adv is not None:
+                a['AP'].append(adv['precision'])
+                a['AR'].append(adv['recall'])
+                a['AF'].append(adv['f1'])
+                a['AJ'].append(adv['jaccard'])
+                a['AE'].append(adv['enrichment'])
+
             if compute_structure:
                 den, con, dia = _structure_metrics(comm, adj, total_vol)
                 a['Den'].append(den); a['Con'].append(con); a['Dia'].append(dia)
@@ -1225,6 +1312,11 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
             'density': float(np.mean(a['Den'])) if a['Den'] else 0.0,
             'conductance': float(np.mean(a['Con'])) if a['Con'] else 0.0,
             'diameter': float(np.mean(a['Dia'])) if a['Dia'] else 0.0,
+            'adv_precision': float(np.mean(a['AP'])) * 100 if a['AP'] else 0.0,
+            'adv_recall': float(np.mean(a['AR'])) * 100 if a['AR'] else 0.0,
+            'adv_f1': float(np.mean(a['AF'])) * 100 if a['AF'] else 0.0,
+            'adv_jaccard': float(np.mean(a['AJ'])) * 100 if a['AJ'] else 0.0,
+            'adv_enrichment': float(np.mean(a['AE'])) if a['AE'] else 0.0,
         }
         extra = ''
         if compute_structure:
@@ -1232,12 +1324,18 @@ def community_search_greedy(embeddings, data, w_list=(0.0, 0.1, 0.2, 0.3, 0.5),
                      f" cond={results[w]['conductance']:.3f}"
                      f" diam={results[w]['diameter']:.2f}")
         cap_str = f" cap={results[w]['cap']:.1f}" if results[w]['cap'] > 0 else ""
+        adv_extra = ''
+        if a['AP']:
+            adv_extra = (f" AdvP={results[w]['adv_precision']:.2f}"
+                         f" AdvR={results[w]['adv_recall']:.2f}"
+                         f" AdvF={results[w]['adv_f1']:.2f}"
+                         f" AdvEn={results[w]['adv_enrichment']:.2f}")
         print(f'[CS-greedy] w={w:<4} '
               f"P={results[w]['precision']:.2f} "
               f"R={results[w]['recall']:.2f} "
               f"F1={results[w]['f1']:.2f} "
               f"Jaccard={results[w]['jaccard']:.2f} "
-              f"size={results[w]['avg_size']:.1f}{cap_str}{extra}")
+              f"size={results[w]['avg_size']:.1f}{cap_str}{extra}{adv_extra}")
     return results
 
 
@@ -1264,6 +1362,8 @@ def community_search_rl(builder, embeddings, data, queries,
     for label in np.unique(y):
         label_sets[label] = set(np.where(y == label)[0].tolist())
 
+    adv_nodes = _extract_adversarial_nodes(data)
+
     queries = np.asarray(queries)
 
     def _oracle_eval():
@@ -1277,6 +1377,7 @@ def community_search_rl(builder, embeddings, data, queries,
                         node_boost=node_boost, max_size=global_cap)
                     for q in queries}
         P, R, Fm, J, sizes = [], [], [], [], []
+        AP, AR, AF, AJ, AE = [], [], [], [], []
         for q in queries:
             truth = label_sets[y[q]].copy()
             truth.discard(int(q))
@@ -1293,6 +1394,14 @@ def community_search_rl(builder, embeddings, data, queries,
             f = 2 * p * r / (p + r) if (p + r) > 0 else 0.0
             j = inter / union if union > 0 else 0.0
             P.append(p); R.append(r); Fm.append(f); J.append(j)
+
+            adv = _adversarial_metrics(pred, adv_nodes, N)
+            if adv is not None:
+                AP.append(adv['precision'])
+                AR.append(adv['recall'])
+                AF.append(adv['f1'])
+                AJ.append(adv['jaccard'])
+                AE.append(adv['enrichment'])
             sizes.append(len(pred))
         res = {
             'precision': float(np.mean(P)) * 100 if P else 0.0,
@@ -1300,10 +1409,21 @@ def community_search_rl(builder, embeddings, data, queries,
             'f1': float(np.mean(Fm)) * 100 if Fm else 0.0,
             'jaccard': float(np.mean(J)) * 100 if J else 0.0,
             'avg_size': float(np.mean(sizes)) if sizes else 0.0,
+            'adv_precision': float(np.mean(AP)) * 100 if AP else 0.0,
+            'adv_recall': float(np.mean(AR)) * 100 if AR else 0.0,
+            'adv_f1': float(np.mean(AF)) * 100 if AF else 0.0,
+            'adv_jaccard': float(np.mean(AJ)) * 100 if AJ else 0.0,
+            'adv_enrichment': float(np.mean(AE)) if AE else 0.0,
         }
+        adv_extra = ''
+        if AP:
+            adv_extra = (f" AdvP={res['adv_precision']:.2f}"
+                         f" AdvR={res['adv_recall']:.2f}"
+                         f" AdvF={res['adv_f1']:.2f}"
+                         f" AdvEn={res['adv_enrichment']:.2f}")
         print(f"[CS-rl] oracle-size  P={res['precision']:.2f} "
               f"R={res['recall']:.2f} F1={res['f1']:.2f} "
-              f"Jaccard={res['jaccard']:.2f} size={res['avg_size']:.1f}")
+              f"Jaccard={res['jaccard']:.2f} size={res['avg_size']:.1f}{adv_extra}")
         return res
 
     # ---- 扫多个 max_size: 每个查询只展开一次到最大 cap, 前缀切片还原各 size ----
@@ -1316,6 +1436,7 @@ def community_search_rl(builder, embeddings, data, queries,
         sweep = {}
         for ms in sorted(max_sizes):
             P, R, Fm, J, sizes = [], [], [], [], []
+            AP, AR, AF, AJ, AE = [], [], [], [], []
             for q in queries:
                 truth = label_sets[y[q]].copy()
                 truth.discard(int(q))
@@ -1332,22 +1453,42 @@ def community_search_rl(builder, embeddings, data, queries,
                 j = inter / union if union > 0 else 0.0
                 P.append(p); R.append(r); Fm.append(f); J.append(j)
                 sizes.append(len(seq))
+
+                adv = _adversarial_metrics(pred, adv_nodes, N)
+                if adv is not None:
+                    AP.append(adv['precision'])
+                    AR.append(adv['recall'])
+                    AF.append(adv['f1'])
+                    AJ.append(adv['jaccard'])
+                    AE.append(adv['enrichment'])
             res = {
                 'precision': float(np.mean(P)) * 100 if P else 0.0,
                 'recall': float(np.mean(R)) * 100 if R else 0.0,
                 'f1': float(np.mean(Fm)) * 100 if Fm else 0.0,
                 'jaccard': float(np.mean(J)) * 100 if J else 0.0,
                 'avg_size': float(np.mean(sizes)) if sizes else 0.0,
+                'adv_precision': float(np.mean(AP)) * 100 if AP else 0.0,
+                'adv_recall': float(np.mean(AR)) * 100 if AR else 0.0,
+                'adv_f1': float(np.mean(AF)) * 100 if AF else 0.0,
+                'adv_jaccard': float(np.mean(AJ)) * 100 if AJ else 0.0,
+                'adv_enrichment': float(np.mean(AE)) if AE else 0.0,
             }
             sweep[ms] = res
+            adv_extra = ''
+            if AP:
+                adv_extra = (f" AdvP={res['adv_precision']:.2f}"
+                             f" AdvR={res['adv_recall']:.2f}"
+                             f" AdvF={res['adv_f1']:.2f}"
+                             f" AdvEn={res['adv_enrichment']:.2f}")
             print(f"[CS-rl] max_size={ms:5d}  P={res['precision']:.2f} "
                   f"R={res['recall']:.2f} F1={res['f1']:.2f} "
-                  f"Jaccard={res['jaccard']:.2f} size={res['avg_size']:.1f}")
+                  f"Jaccard={res['jaccard']:.2f} size={res['avg_size']:.1f}{adv_extra}")
         if oracle_size:
             sweep['oracle'] = _oracle_eval()
         return sweep
 
     P, R, Fm, J, sizes = [], [], [], [], []
+    AP, AR, AF, AJ, AE = [], [], [], [], []
 
     for q in queries:
         truth = label_sets[y[q]].copy()
@@ -1368,18 +1509,37 @@ def community_search_rl(builder, embeddings, data, queries,
         P.append(p); R.append(r); Fm.append(f); J.append(j)
         sizes.append(len(comm))
 
+        adv = _adversarial_metrics(pred, adv_nodes, N)
+        if adv is not None:
+            AP.append(adv['precision'])
+            AR.append(adv['recall'])
+            AF.append(adv['f1'])
+            AJ.append(adv['jaccard'])
+            AE.append(adv['enrichment'])
+
     results = {
         'precision': float(np.mean(P)) * 100 if P else 0.0,
         'recall': float(np.mean(R)) * 100 if R else 0.0,
         'f1': float(np.mean(Fm)) * 100 if Fm else 0.0,
         'jaccard': float(np.mean(J)) * 100 if J else 0.0,
         'avg_size': float(np.mean(sizes)) if sizes else 0.0,
+        'adv_precision': float(np.mean(AP)) * 100 if AP else 0.0,
+        'adv_recall': float(np.mean(AR)) * 100 if AR else 0.0,
+        'adv_f1': float(np.mean(AF)) * 100 if AF else 0.0,
+        'adv_jaccard': float(np.mean(AJ)) * 100 if AJ else 0.0,
+        'adv_enrichment': float(np.mean(AE)) if AE else 0.0,
     }
+    adv_extra = ''
+    if AP:
+        adv_extra = (f" AdvP={results['adv_precision']:.2f}"
+                     f" AdvR={results['adv_recall']:.2f}"
+                     f" AdvF={results['adv_f1']:.2f}"
+                     f" AdvEn={results['adv_enrichment']:.2f}")
     print(f"[CS-rl] P={results['precision']:.2f} "
           f"R={results['recall']:.2f} "
           f"F1={results['f1']:.2f} "
           f"Jaccard={results['jaccard']:.2f} "
-          f"size={results['avg_size']:.1f}")
+          f"size={results['avg_size']:.1f}{adv_extra}")
     if oracle_size:
         results['oracle'] = _oracle_eval()
     return results
@@ -1411,9 +1571,11 @@ def community_search_dynamic(encoder_fn, intent_generator, data, edge_weight,
     for label in np.unique(y):
         label_sets[label] = set(np.where(y == label)[0].tolist())
 
+    adv_nodes = _extract_adversarial_nodes(data)
+
     mult = _boost_multiplier(node_boost, boost_factor, N)
 
-    per_k = {k: {'P': [], 'R': [], 'F': [], 'J': []} for k in topk}
+    per_k = {k: {'P': [], 'R': [], 'F': [], 'J': [], 'AP': [], 'AR': [], 'AF': [], 'AJ': [], 'AE': []} for k in topk}
 
     for q in queries:
         truth = label_sets[y[q]].copy()
@@ -1452,6 +1614,14 @@ def community_search_dynamic(encoder_fn, intent_generator, data, edge_weight,
             per_k[k]['P'].append(p); per_k[k]['R'].append(r)
             per_k[k]['F'].append(f); per_k[k]['J'].append(j)
 
+            adv = _adversarial_metrics(pred, adv_nodes, N)
+            if adv is not None:
+                per_k[k]['AP'].append(adv['precision'])
+                per_k[k]['AR'].append(adv['recall'])
+                per_k[k]['AF'].append(adv['f1'])
+                per_k[k]['AJ'].append(adv['jaccard'])
+                per_k[k]['AE'].append(adv['enrichment'])
+
     results = {}
     for k in topk:
         a = per_k[k]
@@ -1461,12 +1631,23 @@ def community_search_dynamic(encoder_fn, intent_generator, data, edge_weight,
             'recall': float(np.mean(a['R'])) * 100,
             'f1': float(np.mean(a['F'])) * 100,
             'jaccard': float(np.mean(a['J'])) * 100,
+            'adv_precision': float(np.mean(a['AP'])) * 100 if a['AP'] else 0.0,
+            'adv_recall': float(np.mean(a['AR'])) * 100 if a['AR'] else 0.0,
+            'adv_f1': float(np.mean(a['AF'])) * 100 if a['AF'] else 0.0,
+            'adv_jaccard': float(np.mean(a['AJ'])) * 100 if a['AJ'] else 0.0,
+            'adv_enrichment': float(np.mean(a['AE'])) if a['AE'] else 0.0,
         }
+        adv_extra = ''
+        if a['AP']:
+            adv_extra = (f" AdvP={results[k]['adv_precision']:.2f}"
+                         f" AdvR={results[k]['adv_recall']:.2f}"
+                         f" AdvF={results[k]['adv_f1']:.2f}"
+                         f" AdvEn={results[k]['adv_enrichment']:.2f}")
         print(f'[CS-dyn] k={k_label:<7s} '
               f"P={results[k]['precision']:.2f} "
               f"R={results[k]['recall']:.2f} "
               f"F1={results[k]['f1']:.2f} "
-              f"Jaccard={results[k]['jaccard']:.2f}")
+              f"Jaccard={results[k]['jaccard']:.2f}{adv_extra}")
     return results
 
 
@@ -1526,6 +1707,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
     for label in np.unique(y):
         label_sets[label] = set(np.where(y == label)[0].tolist())
 
+    adv_nodes = _extract_adversarial_nodes(data)
+
     mult = _boost_multiplier(node_boost, boost_factor, N)
     prior = _prepare_node_prior(node_prior, N)
 
@@ -1541,7 +1724,8 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
         acs_susp_arr = np.asarray(suspicious_idx, dtype=np.int64).reshape(-1)
 
     accum = {w: {'P': [], 'R': [], 'F': [], 'J': [], 'sizes': [],
-                 'Den': [], 'Con': [], 'Dia': [], 'Cap': []} for w in w_list}
+                 'Den': [], 'Con': [], 'Dia': [], 'Cap': [],
+                 'AP': [], 'AR': [], 'AF': [], 'AJ': [], 'AE': []} for w in w_list}
 
     for q in queries:
         truth = label_sets[y[q]].copy()
@@ -1673,6 +1857,15 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             a = accum[w]
             a['P'].append(p); a['R'].append(r); a['F'].append(f); a['J'].append(j)
             a['sizes'].append(len(comm)); a['Cap'].append(float(max_size))
+
+            adv = _adversarial_metrics(pred, adv_nodes, N)
+            if adv is not None:
+                a['AP'].append(adv['precision'])
+                a['AR'].append(adv['recall'])
+                a['AF'].append(adv['f1'])
+                a['AJ'].append(adv['jaccard'])
+                a['AE'].append(adv['enrichment'])
+
             if compute_structure:
                 den, con, dia = _structure_metrics(comm, adj, total_vol)
                 a['Den'].append(den); a['Con'].append(con); a['Dia'].append(dia)
@@ -1690,6 +1883,11 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
             'density': float(np.mean(a['Den'])) if a['Den'] else 0.0,
             'conductance': float(np.mean(a['Con'])) if a['Con'] else 0.0,
             'diameter': float(np.mean(a['Dia'])) if a['Dia'] else 0.0,
+            'adv_precision': float(np.mean(a['AP'])) * 100 if a['AP'] else 0.0,
+            'adv_recall': float(np.mean(a['AR'])) * 100 if a['AR'] else 0.0,
+            'adv_f1': float(np.mean(a['AF'])) * 100 if a['AF'] else 0.0,
+            'adv_jaccard': float(np.mean(a['AJ'])) * 100 if a['AJ'] else 0.0,
+            'adv_enrichment': float(np.mean(a['AE'])) if a['AE'] else 0.0,
         }
         extra = ''
         if compute_structure:
@@ -1697,11 +1895,17 @@ def community_search_greedy_dynamic(encoder_fn, intent_generator, data, edge_wei
                      f" cond={results[w]['conductance']:.3f}"
                      f" diam={results[w]['diameter']:.2f}")
         cap_str = f" cap={results[w]['cap']:.1f}" if results[w]['cap'] > 0 else ""
+        adv_extra = ''
+        if a['AP']:
+            adv_extra = (f" AdvP={results[w]['adv_precision']:.2f}"
+                         f" AdvR={results[w]['adv_recall']:.2f}"
+                         f" AdvF={results[w]['adv_f1']:.2f}"
+                         f" AdvEn={results[w]['adv_enrichment']:.2f}")
         print(f'[CS-greedy-dyn] w={w:<4} '
               f"P={results[w]['precision']:.2f} "
               f"R={results[w]['recall']:.2f} "
               f"F1={results[w]['f1']:.2f} "
               f"Jaccard={results[w]['jaccard']:.2f} "
-              f"size={results[w]['avg_size']:.1f}{cap_str}{extra}")
+              f"size={results[w]['avg_size']:.1f}{cap_str}{extra}{adv_extra}")
     return results
 

@@ -32,7 +32,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-from torch_geometric.nn import GCNConv
+from torch_geometric.nn import GCNConv, GATConv, SAGEConv, Node2Vec
 from torch_geometric.utils import to_undirected
 
 
@@ -41,7 +41,7 @@ from torch_geometric.utils import to_undirected
 # 在 10-12GB 小 GPU 上跑 ACM 等大图时, 设置 IGACS_CPU_OFFLOAD_GCNC=1 启用 CPU 传播兜底。
 _CPU_OFFLOAD_GCNC = os.environ.get("IGACS_CPU_OFFLOAD_GCNC", "0") == "1"
 
-from model import Encoder
+from model import Encoder, FrozenEmbeddingEncoder
 from hii_gnn import HierarchicalIntentInjectedGNN
 from multi_relation_fusion import MultiRelationEncoder
 from edge_importance import SuspiciousNodeIdentifier
@@ -890,7 +890,9 @@ if __name__ == '__main__':
     parser.add_argument('--num_proj_hidden', type=int, default=1024)
     parser.add_argument('--num_edge_hidden', type=int, default=64)
     parser.add_argument('--activation', type=str, default='prelu')
-    parser.add_argument('--base_model', type=str, default='GCNConv', choices=['GCNConv'])
+    parser.add_argument('--base_model', type=str, default='GCNConv',
+                        choices=['GCNConv', 'GATConv', 'SAGEConv'],
+                        help='GNN conv layer for vanilla encoder (gcn/hii ignores this)')
     parser.add_argument('--num_layers', type=int, default=2)
     parser.add_argument('--tau', type=float, default=0.4)
     parser.add_argument('--num_epochs', type=int, default=200)
@@ -940,8 +942,21 @@ if __name__ == '__main__':
                         help='Refresh candidate edges every N epochs (0=only once)')
     # 创新点三/四
     parser.add_argument('--encoder', type=str, default='gcn',
-                        choices=['gcn', 'hii'],
-                        help='gcn=vanilla GCN baseline; hii=层次化意图注入GNN')
+                        choices=['gcn', 'hii', 'node2vec'],
+                        help='gcn=vanilla GCN baseline; hii=层次化意图注入GNN; '
+                             'node2vec=预计算Node2Vec嵌入(基线对照)')
+    parser.add_argument('--n2v_walk_length', type=int, default=20,
+                        help='Node2Vec random walk length')
+    parser.add_argument('--n2v_context_size', type=int, default=10,
+                        help='Node2Vec context window size')
+    parser.add_argument('--n2v_walks_per_node', type=int, default=10,
+                        help='Node2Vec walks per node')
+    parser.add_argument('--n2v_p', type=float, default=1.0,
+                        help='Node2Vec return parameter (1/BFS-DFS ratio)')
+    parser.add_argument('--n2v_q', type=float, default=1.0,
+                        help='Node2Vec in-out parameter')
+    parser.add_argument('--n2v_epochs', type=int, default=5,
+                        help='Node2Vec SkipGram training epochs')
     parser.add_argument('--hii_heads', type=int, default=4,
                         help='HII-GNN 注意力头数')
     parser.add_argument('--lambda_rec', type=float, default=0.1,
@@ -1294,7 +1309,11 @@ if __name__ == '__main__':
         'leakyrelu': nn.LeakyReLU(),
         'gelu': nn.GELU()
     })[args.activation]
-    base_model = ({'GCNConv': GCNConv})[args.base_model]
+    base_model = ({
+        'GCNConv': GCNConv,
+        'GATConv': GATConv,
+        'SAGEConv': SAGEConv,
+    })[args.base_model]
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using {'GPU: ' + torch.cuda.get_device_name(0) if device.type == 'cuda' else 'CPU'}")
@@ -1368,8 +1387,47 @@ if __name__ == '__main__':
         )
         print(f"[intent] source={args.intent_source}, dim={intent_vector.shape[0]}")
 
-    # ========== 模型 (共享 encoder, 可切换 GCN / HII-GNN / 多关系) ==========
-    if use_multi:
+    # ========== 模型 (共享 encoder, 可切换 GCN / HII-GNN / Node2Vec / 多关系) ==========
+    if args.encoder == 'node2vec':
+        # Node2Vec 基线: 预计算嵌入 → 冻结编码器
+        print(f"\n{'='*60}")
+        print(f"Pre-computing Node2Vec embeddings...")
+        print(f"  walk_length={args.n2v_walk_length}, context_size={args.n2v_context_size}")
+        print(f"  walks_per_node={args.n2v_walks_per_node}, p={args.n2v_p}, q={args.n2v_q}")
+        print(f"  embedding_dim={args.num_hidden}, epochs={args.n2v_epochs}")
+        print(f"{'='*60}")
+        n2v = Node2Vec(
+            data.edge_index,
+            embedding_dim=args.num_hidden,
+            walk_length=args.n2v_walk_length,
+            context_size=args.n2v_context_size,
+            walks_per_node=args.n2v_walks_per_node,
+            p=args.n2v_p,
+            q=args.n2v_q,
+            num_negative_samples=1,
+            sparse=True,
+        ).to(device)
+        n2v_loader = n2v.loader(batch_size=128, shuffle=True, num_workers=0)
+        n2v_optimizer = torch.optim.SparseAdam(n2v.parameters(), lr=0.01)
+        n2v.train()
+        for epoch in range(1, args.n2v_epochs + 1):
+            total_loss = 0
+            for pos_rw, neg_rw in n2v_loader:
+                n2v_optimizer.zero_grad()
+                loss = n2v.loss(pos_rw.to(device), neg_rw.to(device))
+                loss.backward()
+                n2v_optimizer.step()
+                total_loss += loss.item()
+            if epoch % max(1, args.n2v_epochs // 5) == 0 or epoch == 1:
+                print(f"  [Node2Vec] epoch {epoch}/{args.n2v_epochs}  loss={total_loss/len(n2v_loader):.4f}")
+        n2v.eval()
+        with torch.no_grad():
+            n2v_emb = n2v.embedding.weight.detach().clone()
+        print(f"  Node2Vec embeddings shape: {n2v_emb.shape}")
+        print(f"{'='*60}\n")
+        encoder = FrozenEmbeddingEncoder(n2v_emb).to(device)
+        print(f"[encoder] Node2Vec (frozen, pre-computed)")
+    elif use_multi:
         encoder = MultiRelationEncoder(
             num_features, args.num_hidden, activation, args.intent_dim,
             num_relations=data.num_relations, num_layers=args.num_layers,
@@ -1390,7 +1448,7 @@ if __name__ == '__main__':
             num_features, args.num_hidden, activation,
             base_model=base_model, num_layers=args.num_layers
         ).to(device)
-        print("[encoder] vanilla GCN")
+        print(f"[encoder] vanilla {args.base_model}")
 
     contrastive_model = IntentContrastiveModel(
         encoder, args.num_hidden, args.num_proj_hidden, args.intent_dim,

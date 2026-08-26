@@ -37,7 +37,7 @@ def compute_node_similarity(x, method='cosine'):
     return sim_matrix
 
 
-def perturb_edge_injection(data, noise_ratio=0.1, seed=0, method='dissimilar'):
+def perturb_edge_injection(data, noise_ratio=0.03, seed=0, method='dissimilar'):
     """
     对抗边注入: 添加连接不相似节点的噪声边
 
@@ -111,19 +111,23 @@ def perturb_edge_injection(data, noise_ratio=0.1, seed=0, method='dissimilar'):
     new_data = data.clone()
     new_data.edge_index = new_edge_index
 
+    # 对抗节点集合: 被注入噪声边涉及的端点 (用于评估对抗信息挖掘)
+    pert_nodes = sorted({n for e in noise_edges for n in e})
+
     # 添加扰动信息
     new_data.pert_info = {
         'type': 'edge_injection',
         'method': method,
         'noise_ratio': noise_ratio,
         'num_noise_edges': len(noise_edges),
-        'seed': seed
+        'seed': seed,
+        'pert_nodes': np.asarray(pert_nodes, dtype=np.int64),
     }
 
     return new_data
 
 
-def perturb_edge_dropout(data, drop_ratio=0.2, seed=0, method='important'):
+def perturb_edge_dropout(data, drop_ratio=0.03, seed=0, method='important'):
     """
     边删除: 删除重要边
 
@@ -171,19 +175,23 @@ def perturb_edge_dropout(data, drop_ratio=0.2, seed=0, method='important'):
     new_data = data.clone()
     new_data.edge_index = new_edge_index
 
+    dropped_edges = edge_index[:, drop_indices]
+    pert_nodes = torch.unique(dropped_edges.reshape(-1)).cpu().numpy()
+
     # 添加扰动信息
     new_data.pert_info = {
         'type': 'edge_dropout',
         'method': method,
         'drop_ratio': drop_ratio,
         'num_drop_edges': num_drop_edges,
-        'seed': seed
+        'seed': seed,
+        'pert_nodes': pert_nodes,
     }
 
     return new_data
 
 
-def perturb_feature_noise(data, noise_std=0.1, seed=0):
+def perturb_feature_noise(data, noise_std=0.03, seed=0):
     """
     特征扰动: 添加高斯噪声
 
@@ -209,13 +217,14 @@ def perturb_feature_noise(data, noise_std=0.1, seed=0):
     new_data.pert_info = {
         'type': 'feature_noise',
         'noise_std': noise_std,
-        'seed': seed
+        'seed': seed,
+        'pert_nodes': np.arange(data.num_nodes, dtype=np.int64),
     }
 
     return new_data
 
 
-def perturb_feature_mask(data, mask_ratio=0.2, seed=0):
+def perturb_feature_mask(data, mask_ratio=0.03, seed=0):
     """
     特征遮蔽: 随机遮蔽部分特征维度
 
@@ -247,8 +256,8 @@ def perturb_feature_mask(data, mask_ratio=0.2, seed=0):
     return new_data
 
 
-def perturb_combined(data, edge_noise_ratio=0.1, edge_drop_ratio=0.1,
-                     feature_noise_std=0.05, seed=0):
+def perturb_combined(data, edge_noise_ratio=0.03, edge_drop_ratio=0.03,
+                     feature_noise_std=0.03, seed=0):
     """
     组合扰动: 同时应用多种扰动
 
@@ -268,12 +277,20 @@ def perturb_combined(data, edge_noise_ratio=0.1, edge_drop_ratio=0.1,
     pert_data = perturb_feature_noise(pert_data, feature_noise_std, seed)
 
     # 更新扰动信息
+    pert_nodes = set()
+    for key in ('pert_nodes',):
+        if hasattr(pert_data, 'pert_info') and isinstance(pert_data.pert_info, dict):
+            prev_nodes = pert_data.pert_info.get('pert_nodes', None)
+            if prev_nodes is not None:
+                pert_nodes.update(np.asarray(prev_nodes, dtype=np.int64).reshape(-1).tolist())
+
     pert_data.pert_info = {
         'type': 'combined',
         'edge_noise_ratio': edge_noise_ratio,
         'edge_drop_ratio': edge_drop_ratio,
         'feature_noise_std': feature_noise_std,
-        'seed': seed
+        'seed': seed,
+        'pert_nodes': np.asarray(sorted(pert_nodes), dtype=np.int64) if pert_nodes else np.arange(data.num_nodes, dtype=np.int64),
     }
 
     return pert_data
@@ -306,18 +323,18 @@ def get_perturbation_levels():
     """定义扰动级别"""
     return {
         'light': {
+            'edge_noise_ratio': 0.01,
+            'edge_drop_ratio': 0.01,
+            'feature_noise_std': 0.01
+        },
+        'medium': {
+            'edge_noise_ratio': 0.03,
+            'edge_drop_ratio': 0.03,
+            'feature_noise_std': 0.03
+        },
+        'heavy': {
             'edge_noise_ratio': 0.05,
             'edge_drop_ratio': 0.05,
             'feature_noise_std': 0.05
-        },
-        'medium': {
-            'edge_noise_ratio': 0.15,
-            'edge_drop_ratio': 0.15,
-            'feature_noise_std': 0.10
-        },
-        'heavy': {
-            'edge_noise_ratio': 0.25,
-            'edge_drop_ratio': 0.25,
-            'feature_noise_std': 0.20
         }
     }

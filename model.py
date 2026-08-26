@@ -119,6 +119,20 @@ class Encoder(torch.nn.Module):
         return x
 
 
+class FrozenEmbeddingEncoder(torch.nn.Module):
+    """冻结嵌入编码器: 返回预计算的节点嵌入, 用于 Node2Vec 等基线对照。
+    接口与 Encoder 对齐 (forward(x, edge_index, edge_weight, intent=None)),
+    但忽略所有输入, 直接返回预计算的嵌入向量。
+    """
+    def __init__(self, embeddings: torch.Tensor):
+        super().__init__()
+        # 注册为 buffer, 不参与梯度更新, 但会随 model.to(device) 迁移
+        self.register_buffer('emb', embeddings.detach())
+
+    def forward(self, x, edge_index, edge_weight=None, intent=None):
+        return self.emb
+
+
 class TrainModel(torch.nn.Module):
     def __init__(self, encoder: Encoder, num_hidden: int, num_proj_hidden: int,
                  tau: float = 0.5):
