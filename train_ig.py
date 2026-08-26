@@ -1393,13 +1393,30 @@ if __name__ == '__main__':
     num_edges = data.edge_index.size(1)
     print(f"[data] Graph size: {num_nodes} nodes, {num_edges} edges")
 
-    # 大图自动子图采样: >100K 节点 或 >2M 边时采样一个子图训练
-    # 这是处理 com-Amazon (334K) 等大图在 12GB GPU 上的实用方案
-    should_sample = (num_nodes > 100000) or (num_edges > 2000000)
+    # 检测 GPU 显存, 动态调整采样阈值
+    gpu_memory_gb = 0
+    if torch.cuda.is_available():
+        gpu_memory_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+        print(f"[data] GPU memory: {gpu_memory_gb:.1f} GB")
+
+    # 根据显存调整阈值: 24GB 可以跑更大的图
+    if gpu_memory_gb >= 20:
+        # 24GB GPU: 节点 >200K 或 边 >5M 才采样
+        node_threshold = 200000
+        edge_threshold = 5000000
+        print(f"[data] Using high-memory thresholds (200K nodes, 5M edges)")
+    else:
+        # 12GB GPU: 节点 >100K 或 边 >2M 采样
+        node_threshold = 100000
+        edge_threshold = 2000000
+        print(f"[data] Using standard-memory thresholds (100K nodes, 2M edges)")
+
+    # 大图自动子图采样
+    should_sample = (num_nodes > node_threshold) or (num_edges > edge_threshold)
     if should_sample:
-        target_nodes = min(50000, num_nodes // 2)  # 采样最多 50K 节点
-        print(f"[WARNING] 大图检测 ({num_nodes} nodes, {num_edges} edges). 全图 GCN 在 12GB GPU 上会 OOM.")
-        print(f"  [AUTO] 启用子图采样: 随机选择 {target_nodes} 个节点及其邻域")
+        target_nodes = min(80000 if gpu_memory_gb >= 20 else 50000, num_nodes // 2)
+        print(f"[WARNING] 大图检测 ({num_nodes} nodes, {num_edges} edges). 超出阈值, 启用子图采样.")
+        print(f"  [AUTO] 采样到 {target_nodes} 个节点及其邻域")
 
         # 随机选择种子节点
         seed_nodes = torch.randperm(num_nodes)[:target_nodes]
