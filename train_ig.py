@@ -28,6 +28,13 @@ from time import perf_counter as t
 
 from utils import set_everything, get_dataset, get_cs_dataset, CS_DATASETS
 
+# 大图 mini-batch 训练支持
+try:
+    from torch_geometric.loader import NeighborLoader
+    HAS_NEIGHBOR_LOADER = True
+except ImportError:
+    HAS_NEIGHBOR_LOADER = False
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -908,6 +915,15 @@ if __name__ == '__main__':
                         help='random/encoder=全图固定意图; dynamic=按查询节点动态生成意图')
     parser.add_argument('--intent_num_queries', type=int, default=100,
                         help='动态意图社区搜索时采样的查询数 (每个查询重编码一次)')
+    # 大图 mini-batch 训练
+    parser.add_argument('--minibatch', action='store_true',
+                        help='Enable mini-batch training for large graphs (>100K nodes)')
+    parser.add_argument('--minibatch_size', type=int, default=4096,
+                        help='Number of nodes per mini-batch')
+    parser.add_argument('--minibatch_num_neighbors', type=int, default=10,
+                        help='Number of neighbors to sample per layer')
+    parser.add_argument('--minibatch_num_batches', type=int, default=10,
+                        help='Number of mini-batches per epoch (for large graphs)')
     parser.add_argument('--query', type=str,
                         default='找出在社交网络上通过隐蔽连接协同的群体')
     parser.add_argument('--intent_encoder_name', type=str,
@@ -1371,6 +1387,52 @@ if __name__ == '__main__':
         print(f"[data] 多关系 R={data.num_relations}: {rel_info}")
 
     data = data.to(device)
+
+    # ========== 图规模检测与子图采样 ==========
+    num_nodes = data.num_nodes
+    num_edges = data.edge_index.size(1)
+    print(f"[data] Graph size: {num_nodes} nodes, {num_edges} edges")
+
+    # 大图自动子图采样: >100K 节点时采样一个子图训练
+    # 这是处理 com-Amazon (334K) 等大图在 12GB GPU 上的实用方案
+    if num_nodes > 100000:
+        target_nodes = min(50000, num_nodes // 2)  # 采样最多 50K 节点
+        print(f"[WARNING] 大图检测 ({num_nodes} nodes). 全图 GCN 在 12GB GPU 上会 OOM.")
+        print(f"  [AUTO] 启用子图采样: 随机选择 {target_nodes} 个节点及其邻域")
+
+        # 随机选择种子节点
+        seed_nodes = torch.randperm(num_nodes)[:target_nodes]
+
+        # 提取 k-hop 邻域 (简单实现: 只取 1-hop)
+        from torch_geometric.utils import k_hop_subgraph
+        subset, edge_index, mapping, edge_mask = k_hop_subgraph(
+            seed_nodes, num_hops=1, edge_index=data.edge_index,
+            relabel_nodes=True, num_nodes=num_nodes
+        )
+
+        # 更新 data 为子图
+        data.x = data.x[subset]
+        data.edge_index = edge_index
+        if data.y is not None:
+            data.y = data.y[subset]
+        if hasattr(data, 'train_mask') and data.train_mask is not None:
+            data.train_mask = data.train_mask[subset]
+            data.val_mask = data.val_mask[subset]
+            data.test_mask = data.test_mask[subset]
+        data.num_nodes = subset.size(0)
+
+        print(f"  [AUTO] 子图: {data.num_nodes} nodes, {data.edge_index.size(1)} edges")
+        print(f"  [AUTO] 训练集: {data.train_mask.sum().item()}, "
+              f"验证集: {data.val_mask.sum().item()}, "
+              f"测试集: {data.test_mask.sum().item()}")
+
+        # 强制降低 hidden dim 以进一步节省显存
+        if args.num_hidden > 128:
+            old_hidden = args.num_hidden
+            args.num_hidden = 128
+            print(f"  [AUTO] 自动降低 num_hidden: {old_hidden} → 128")
+
+    num_features = data.x.shape[1]
 
     # ========== 意图 ==========
     rng_q = torch.Generator().manual_seed(args.seed)  # 动态意图采样查询节点用
